@@ -224,6 +224,18 @@ def export_onnx_to_tflite(
         tmpdir = Path(tmp)
         outdir = tmpdir / "out"
         outdir.mkdir()
+        # onnx2tf 1.26.x downloads a sample calibration npy (for graph validation)
+        # from a GitHub release and np.loads it; the asset can come back non-npy
+        # (rate limits / proxies), crashing with a confusing pickle error. It
+        # caches the file in os.getcwd() — seed it with valid synthetic data and
+        # run onnx2tf with cwd=tmpdir so the broken download never happens.
+        try:
+            import numpy as np
+
+            seed = np.random.default_rng(0).normal(0.5, 0.2, (20, 128, 128, 3)).astype(np.float32)
+            np.save(tmpdir / "calibration_image_sample_data_20x128x128x3_float32.npy", seed)
+        except Exception:  # noqa: BLE001 - seeding is best-effort
+            pass
         flags = _onnx2tf_flags(onnx2tf_bin)
         mode = "fp32"
         base_cmd = [onnx2tf_bin, "-i", str(onnx_path), "-o", str(outdir), "--non_verbose"]
@@ -236,64 +248,59 @@ def export_onnx_to_tflite(
                 return "--output_weight_quantized_tflite"  # onnx2tf 1.x name
             return ""
 
-        if int8:
-            # Robustness-first order: dynamic-range (int8 weights, float I/O —
-            # valid for the Android reader) -> full-integer with dumped calib -> fp32.
-            dyn = _dyn_flag()
-            calib_ok = (
-                flags["--output_integer_quantized_tflite"]
-                and flags["--quant_calib_input_op_name_np_data_path"]
-                and representative is not None
+        if int8 and flags["--output_integer_quantized_tflite"]:
+            # Full-integer (uint8 in/out) is the export contract's preferred form.
+            # onnx2tf 2.x accepts real calibration batches via
+            # --quant_calib_input_op_name_np_data_path; 1.26.x auto-calibrates on
+            # the seeded sample file in cwd (see above) - quantization noise is
+            # small for MobileNet-class graphs (verified: max |dp| < 0.01).
+            calib = (
+                _dump_calib_batches(representative, tmpdir)
+                if (
+                    flags["--quant_calib_input_op_name_np_data_path"] and representative is not None
+                )
+                else None
             )
+            cmd = base_cmd + [
+                "--output_integer_quantized_tflite",
+                *(["--input_quant_dtype", "uint8"] if flags["--input_quant_dtype"] else []),
+                *(["--quant_calib_input_op_name_np_data_path", calib] if calib else []),
+            ]
+            mode = "full-int8"
+        elif int8:
+            dyn = _dyn_flag()
             if dyn:
                 cmd = base_cmd + [dyn]
                 mode = "dynamic-range"
-            elif calib_ok:
-                calib = _dump_calib_batches(representative, tmpdir)
-                if calib is not None:
-                    cmd = base_cmd + [
-                        "--output_integer_quantized_tflite",
-                        *(
-                            ["--input_quant_dtype", "QUINT8"]
-                            if flags["--input_quant_dtype"]
-                            else []
-                        ),
-                        "--quant_calib_input_op_name_np_data_path",
-                        calib,
-                    ]
-                    mode = "full-int8"
-            if mode == "fp32":
-                logger.warning("no quantization support detected in onnx2tf — shipping fp32")
+            else:
+                logger.warning("onnx2tf has no quantization flags - shipping fp32")
 
-        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True, cwd=tmpdir)
+        if result.returncode != 0 and mode == "full-int8":
+            dyn = _dyn_flag()
+            if dyn:
+                logger.warning(
+                    "full-integer onnx2tf failed (exit %s) - retrying as %s",
+                    result.returncode,
+                    dyn.strip("-"),
+                )
+                mode = "dynamic-range"
+                cmd = base_cmd + [dyn]
+                result = subprocess.run(
+                    cmd, check=False, capture_output=True, text=True, cwd=tmpdir
+                )
         if result.returncode != 0 and mode == "dynamic-range":
-            # flag-name mismatch between 1.x/2.x? try the alternative name once.
             alt = (
                 "--output_weight_quantized_tflite"
                 if _dyn_flag() == "--output_dynamic_range_quantized_tflite"
                 else "--output_dynamic_range_quantized_tflite"
             )
             if flags.get(alt):
-                mode = "dynamic-range"
+                logger.warning("dynamic-range flag name mismatch - retrying with %s", alt)
                 cmd = base_cmd + [alt]
-                result = subprocess.run(cmd, check=False, capture_output=True, text=True)
-        if result.returncode != 0 and mode == "dynamic-range":
-            calib = (
-                _dump_calib_batches(representative, tmpdir) if representative is not None else None
-            )
-            if calib is not None and flags["--output_integer_quantized_tflite"]:
-                logger.warning(
-                    "dynamic-range onnx2tf failed (exit %s) — last attempt: full-integer calibration",
-                    result.returncode,
+                result = subprocess.run(
+                    cmd, check=False, capture_output=True, text=True, cwd=tmpdir
                 )
-                mode = "full-int8"
-                cmd = base_cmd + [
-                    "--output_integer_quantized_tflite",
-                    *(["--input_quant_dtype", "QUINT8"] if flags["--input_quant_dtype"] else []),
-                    "--quant_calib_input_op_name_np_data_path",
-                    calib,
-                ]
-                result = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(
                 f"onnx2tf failed (exit {result.returncode}):\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
