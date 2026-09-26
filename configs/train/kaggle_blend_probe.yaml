@@ -1,0 +1,42 @@
+# Real-data probe of the improvement ladder — tiny slice of the Kaggle blend.
+# Purpose: prove the full campaign loop (train -> TTA -> soup -> threshold
+# search -> Wilson CI -> log) on REAL fundus images in minutes on a CPU runner.
+# NOT for production metrics — use configs/train/kaggle_blend.yaml for that.
+data:
+  dataset: aptos
+  root: data/kaggle_blend
+  img_size: 160
+  batch_size: 32
+  num_workers: 0
+  clahe_prob: 0.5
+  ben_graham: false
+  limit: 600                # per-split cap: 600 train / 600 val of the blend
+  val_fraction: 0.15
+  test_fraction: 0.0
+  split_salt: probe
+
+model:
+  backbone: mobilenetv3_small_100
+  pretrained: false         # network-free: random init is fine for plumbing proof
+  dropout: 0.2
+  num_grades: 5
+
+train:
+  epochs: 1
+  lr: 0.001
+  weight_decay: 0.02
+  warmup_epochs: 0
+  grad_clip: 5.0
+  amp: false
+  ema: false
+  sampler: true
+  patience: 2
+  seed: 42
+  save_dir: artifacts/probe
+  loss:
+    ordinal_weight: 1.0
+    refer_weight: 0.3
+    focal_gamma: 2.0
+
+eval:
+  batch_size: 64

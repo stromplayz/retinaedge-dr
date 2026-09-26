@@ -76,6 +76,28 @@ Full walkthrough: **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
 | `android/` | Android client consuming the export contract |
 | `tests/`, `scripts/`, `.github/` | pytest, env check, CI/workflows |
 
+## The 97% campaign (research plan + continuous improvement)
+
+The road to **97% referable-DR accuracy** is formalized in
+[docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md): medical physics (Retinex/Ben-Graham/CLAHE),
+CORAL ordinal objective, the ten-item loophole playbook (data maximalism, patient-aware
+splits, threshold/cut-point fitting, TTA, model soup, ensembling, progressive resizing,
+pseudo-labeling, CLAHE invariance, calibration), and a Wilson-CI-gated definition of
+"reached".
+
+Continuous improvement runs **inside GitHub** via
+[`.github/workflows/improve.yml`](.github/workflows/improve.yml) (manual dispatch or
+every 3 days): it pulls the 18,383-image Kaggle blend (DDR+APTOS+Messidor-2+IDRiD) with
+the `KAGGLE_API_TOKEN` secret, advances the resumable escalation ladder
+(`retinaedge.train.auto_improve`), applies the full loophole stack, and commits
+`runs/improvement_log.md` + `runs/improve_state.json` back to the repo.
+
+```bash
+# locally:
+python3 -m retinaedge.train.auto_improve --config configs/train/kaggle_blend.yaml --budget small
+# or: make improve CFG=configs/train/kaggle_blend.yaml BUDGET=small
+```
+
 ## Documentation index
 
 | Doc | Contents |
@@ -86,6 +108,7 @@ Full walkthrough: **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
 | [docs/EXPORT_DEPLOY.md](docs/EXPORT_DEPLOY.md) | export graph contract, ONNX, TFLite int8, benchmark, Android integration |
 | [docs/MODEL_CARD.md](docs/MODEL_CARD.md) | intended use, limitations, ethics, responsible-use notice |
 | [docs/INTERFACES.md](docs/INTERFACES.md) | binding module contract (v1.0) for contributors |
+| [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md) | 97% campaign: team, physics, formulas, loophole playbook, milestones |
 
 ## Notebooks
 
@@ -103,7 +126,9 @@ Full walkthrough: **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
   caveats: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md), provenance in `provenance.json`.
 - ✅ CI green on `main` (lint + 92 tests + smoke pipeline on every push)
 - 🚧 int8 TFLite conversion for Android (export path wired; run "Export" with `int8=true`)
-- 🚧 Quality roadmap: 224px full training, external validation (Messidor-2 / IDRiD), on-device bench
+- ✅ **97% campaign live**: Kaggle 4-source blend (18,383 imgs, patient-aware splits) + Messidor-2 external
+  set + continuous improvement workflow (`improve.yml`) with resumable escalation ladder
+- 🚧 Remaining: GPU rung s4/s5 (Kaggle/Colab), pseudo-label round on EyePACS, one-shot external proof
 
 ## License
 

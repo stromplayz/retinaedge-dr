@@ -1,0 +1,203 @@
+# Continuous improvement loop — escalate toward the accuracy goal (default 97%
+# referable-DR accuracy) using the full loophole stack (TTA + soup + cut-point
+# decoding + threshold search), then commit progress back to the repo.
+#
+# Each invocation is RESUMABLE: runs/improve_state.json records completed
+# ladder stages, so scheduled runs continue the campaign instead of repeating
+# work. Logs (runs/improvement_log.md) and state are committed back so the
+# loop is auditable in git history.
+#
+# Data sources (input `dataset_mode`):
+#   hf      — resolve a public HF fundus dataset (anonymous, no secrets needed)
+#   kaggle  — pull a Kaggle dataset with the KAGGLE_API_TOKEN secret
+#   synthetic — no data download (plumbing/calibration run only)
+
+name: Continuous improve (ladder toward 97%)
+
+on:
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: "Ladder budget profile"
+        type: choice
+        options: [small, medium, full]
+        default: small
+      target:
+        description: "Accuracy goal (referable DR)"
+        default: "0.97"
+      max_stages:
+        description: "Max ladder stages per invocation"
+        default: "5"
+      config:
+        description: "Training config (blank = auto: kaggle->kaggle_blend, hf->online_pilot)"
+        default: ""
+      dataset_mode:
+        description: "Data source for this run"
+        type: choice
+        options: [hf, kaggle, synthetic]
+        default: kaggle
+      kaggle_dataset:
+        description: "Kaggle dataset handle (dataset_mode=kaggle)"
+        default: "jin0507/ddr-aptos-2019-idrid-and-messidor-2-256-x-256"
+      hf_repo:
+        description: "Explicit HF dataset id (dataset_mode=hf, blank = auto-search)"
+        default: ""
+      require_ci:
+        description: "Goal only counts when Wilson CI lower bound clears target"
+        type: boolean
+        default: false
+  schedule:
+    # Every 3 days at 03:07 UTC — keeps the campaign advancing autonomously.
+    - cron: "7 3 */3 * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: improve-loop
+  cancel-in-progress: false
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  HF_HUB_DISABLE_PROGRESS_BARS: "1"
+
+jobs:
+  improve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      INPUTS_BUDGET: ${{ inputs.budget || 'small' }}
+      INPUTS_TARGET: ${{ inputs.target || '0.97' }}
+      INPUTS_MAX_STAGES: ${{ inputs.max_stages || '5' }}
+      INPUTS_CONFIG: ${{ inputs.config || '' }}
+      INPUTS_MODE: ${{ inputs.dataset_mode || 'kaggle' }}
+      INPUTS_KAGGLE: ${{ inputs.kaggle_dataset || 'jin0507/ddr-aptos-2019-idrid-and-messidor-2-256-x-256' }}
+      INPUTS_HF: ${{ inputs.hf_repo || '' }}
+      INPUTS_REQUIRE_CI: ${{ inputs.require_ci || false }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Free runner disk (remove preinstalled bloat)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune -af > /dev/null 2>&1 || true
+          df -h / | tail -1
+
+      - uses: ./.github/actions/setup-env
+        with:
+          extras: dev
+          cpu_torch: "true"
+
+      - name: Install data stack (kagglehub + HF)
+        run: python -m pip install "kagglehub>=1.0" "datasets>=2.19" "huggingface_hub>=0.23"
+
+      - name: Resolve dataset (Kaggle)
+        if: env.INPUTS_MODE == 'kaggle'
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -m retinaedge.data.download_kaggle --handle "$INPUTS_KAGGLE" --dest data/blend_raw
+          # Manifest-style blends (image_path/grade/split CSVs) -> standard layout
+          if python -m retinaedge.data.manifest_import --raw data/blend_raw/raw --out data/kaggle_blend; then
+            echo "manifest blend imported"
+          else
+            echo "no manifest found - falling back to prepare.py"
+            python -m retinaedge.data.prepare --config "${CONFIG:-configs/train/kaggle_blend.yaml}" --root data/kaggle_blend --force
+          fi
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, pathlib, collections
+          p = pathlib.Path("data/kaggle_blend/labels.csv")
+          if p.exists():
+              rows = list(csv.DictReader(p.open())) if (csv := __import__("csv")) else []
+              grades = collections.Counter(r["grade"] for r in rows)
+              splits = collections.Counter(r.get("split", "hash") for r in rows)
+              prov = pathlib.Path("data/kaggle_blend/provenance.json")
+              src = json.loads(prov.read_text()).get("manifest", "?") if prov.exists() else "?"
+              print(f"### Kaggle dataset resolved (manifest: `{src}`)")
+              print(f"- images: {len(rows)}\n- grade counts: {dict(sorted(grades.items()))}")
+              print(f"- splits: {dict(sorted(splits.items()))}")
+          PY
+
+      - name: Resolve dataset (Hugging Face)
+        if: env.INPUTS_MODE == 'hf'
+        run: |
+          set -euo pipefail
+          ARGS=(--out data/online_dr --json artifacts/online/provenance.json)
+          if [ -n "$INPUTS_HF" ]; then ARGS+=(--repo "$INPUTS_HF"); fi
+          python -m retinaedge.data.resolve_hf "${ARGS[@]}" --bake-ben-graham
+
+      - name: Skip data download (synthetic)
+        if: env.INPUTS_MODE == 'synthetic'
+        run: echo "synthetic run — no data download"
+
+      - name: Run improvement ladder (resumable)
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          CONFIG="$INPUTS_CONFIG"
+          if [ -z "$CONFIG" ]; then
+            if [ "$INPUTS_MODE" = "kaggle" ]; then CONFIG=configs/train/kaggle_blend.yaml; else CONFIG=configs/train/online_pilot.yaml; fi
+          fi
+          echo "config: $CONFIG | mode: $INPUTS_MODE | budget: $INPUTS_BUDGET"
+          EXTRA=()
+          if [ "$INPUTS_REQUIRE_CI" = "true" ]; then EXTRA+=(--require-ci); fi
+          python -m retinaedge.train.auto_improve \
+            --config "$CONFIG" \
+            --budget "$INPUTS_BUDGET" \
+            --target "$INPUTS_TARGET" \
+            --max-stages "$INPUTS_MAX_STAGES" \
+            --state runs/improve_state.json \
+            --log runs/improvement_log.md \
+            ${EXTRA[@]+"${EXTRA[@]}"}
+
+      - name: Job summary (campaign state)
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY" || true
+          import json, pathlib
+          p = pathlib.Path("runs/improve_state.json")
+          if p.exists():
+              d = json.loads(p.read_text())
+              b = d.get("best") or {}
+              print("### Improvement campaign state")
+              print(f"- goal: {d.get('target')} | budget: {d.get('budget')} | reached: {d.get('goal_reached')}")
+              if b:
+                  print(f"- best: acc_refer **{b.get('acc_refer')}** (CI lo {b.get('ci95_lo')}), "
+                        f"QWK {b.get('qwk')} @ stage `{b.get('stage')}` variant `{b.get('variant')}`")
+              for h in d.get("history", [])[-5:]:
+                  print(f"- {h.get('stage')}: acc_refer={h.get('acc_refer')}, qwk={h.get('qwk')}")
+          log = pathlib.Path("runs/improvement_log.md")
+          if log.exists():
+              print("\n<details><summary>improvement_log.md (tail)</summary>\n")
+              print("```")
+              print("".join(log.read_text().splitlines(keepends=True)[-40:]))
+              print("```\n</details>")
+          PY
+
+      - name: Upload run artifacts (thresholds, eval jsons)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: improve-run
+          path: |
+            runs/
+            artifacts/online/provenance.json
+          retention-days: 14
+
+      - name: Commit progress back to the repo (continuous loop)
+        run: |
+          git config user.name "retinaedge-bot"
+          git config user.email "retinaedge-bot@users.noreply.github.com"
+          git add runs/improvement_log.md runs/improve_state.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No state changes to commit."
+          else
+            git commit -m "chore(improve): campaign progress $(date -u +%Y-%m-%dT%H:%MZ)" \
+              -m "Auto-committed by the continuous-improve workflow (state + log only, no data/models)."
+            git push
+          fi

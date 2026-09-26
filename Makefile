@@ -36,3 +36,26 @@ demo:
 
 clean:
 	rm -rf artifacts .pytest_cache .ruff_cache build dist *.egg-info
+
+# --- Accuracy-loophole stack & continuous improvement -------------------------
+# Escalation ladder toward the accuracy goal (default 97% referable-DR acc).
+CFG ?= configs/train/online_pilot.yaml
+BUDGET ?= small
+TARGET ?= 0.97
+
+improve:
+	python3 -m retinaedge.train.auto_improve --config $(CFG) --budget $(BUDGET) --target $(TARGET) \
+	  --state runs/improve_state.json --log runs/improvement_log.md
+
+improve-plan:
+	python3 -m retinaedge.train.auto_improve --config $(CFG) --budget $(BUDGET) --target $(TARGET) --dry-run
+
+thresholds:
+	python3 -m retinaedge.eval.threshold_search --config $(CFG) --ckpt $(CKPT) --split val --out $(OUT)
+
+soup:
+	python3 -c "from retinaedge.models.soup import make_soup; make_soup('$(INGREDIENTS)'.split(','), '$(OUT)')"
+
+pseudo:
+	python3 -m retinaedge.train.pseudo_label --config $(CFG) --ckpt $(CKPT) \
+	  --images-dir $(IMAGES_DIR) --out $(OUT) --tau $(TAU)

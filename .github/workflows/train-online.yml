@@ -36,6 +36,8 @@ permissions:
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   HF_HUB_DISABLE_PROGRESS_BARS: "1"
+  # New-style Kaggle token (KGAT_...). Optional: the HF path works anonymously.
+  KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
 
 jobs:
   train-online:

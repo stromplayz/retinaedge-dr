@@ -3,7 +3,11 @@
 !data/README.md
 /artifacts/
 !artifacts/README.md
-runs/
+# runs/ keeps models/logs out of git, EXCEPT the improvement-loop state files
+# which the continuous-improvement workflow commits back to the repo.
+runs/*
+!runs/improvement_log.md
+!runs/improve_state.json
 outputs/
 
 # Model binaries go to GitHub Releases (or LFS), not git

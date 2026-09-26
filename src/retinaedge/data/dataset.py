@@ -309,7 +309,7 @@ def _build_file_dataset(cfg: dict, split: str, transform: A.Compose | None) -> F
         for img, g in zip(df["image"], grades, strict=True)
         if not pd.isna(g) and 0 <= int(g) <= 4
     ]
-    readable = [(img, grade) for img, grade in labelled if (root / "images" / img).exists()]
+    readable = [(str(img), int(g)) for img, g in labelled if (root / "images" / img).exists()]
     if len(readable) < len(labelled):
         logger.warning(
             "%s: dropping %d entries with missing image files", root, len(labelled) - len(readable)
@@ -317,13 +317,39 @@ def _build_file_dataset(cfg: dict, split: str, transform: A.Compose | None) -> F
     if not readable:
         raise FileNotFoundError(f"no readable images under {root / 'images'}")
 
-    tags = split_tags(
-        [img for img, _ in readable],
-        val_fraction=float(data.get("val_fraction", 0.15)),
-        test_fraction=float(data.get("test_fraction", 0.0)),
-        salt=str(data.get("split_salt", "")),
-    )
-    keep = [(img, grade) for img, grade in readable if tags[img] == split]
+    # Curated datasets may ship their own (e.g. patient-aware) splits via an
+    # optional ``split`` column — honoring them prevents same-patient leakage
+    # that hash-based name splits cannot see. Synonyms are normalized; rows
+    # with unknown tags are excluded from every split (counted in a warning).
+    override_tags: dict[str, str] | None = None
+    if "split" in df.columns:
+        norm = (
+            df["split"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .replace({"validation": "val", "valid": "val", "": "unknown"})
+        )
+        allowed = {"train", "val", "test"}
+        override_tags, unknown = {}, 0
+        for img, tag in zip(df["image"].astype(str), norm, strict=True):
+            if tag in allowed:
+                override_tags.setdefault(img, tag)
+            else:
+                unknown += 1
+        if unknown:
+            logger.warning("%s: %d rows have unknown/empty split tags", labels_csv, unknown)
+
+    if override_tags is not None:
+        keep = [(img, grade) for img, grade in readable if override_tags.get(img) == split]
+    else:
+        tags = split_tags(
+            [img for img, _ in readable],
+            val_fraction=float(data.get("val_fraction", 0.15)),
+            test_fraction=float(data.get("test_fraction", 0.0)),
+            salt=str(data.get("split_salt", "")),
+        )
+        keep = [(img, grade) for img, grade in readable if tags[img] == split]
     if not keep:
         raise ValueError(
             f"split {split!r} is empty for {root} (val_fraction={data.get('val_fraction')}, "
