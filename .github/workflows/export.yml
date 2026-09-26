@@ -143,13 +143,20 @@ jobs:
         continue-on-error: true
         run: python -m retinaedge.export.metadata --model artifacts/export/model.onnx --out-dir artifacts/export
 
-      - name: Export int8 TFLite (direct path)
+      - name: Export int8 TFLite (direct ai-edge-torch, onnx2tf fallback)
         if: inputs.int8
         run: |
           set -euo pipefail
           CKPT=$(find artifacts/train -name best.pt | head -1)
-          python -m retinaedge.export.export_tflite --direct --config "$CONFIG_PATH" --ckpt "$CKPT" \
-            --out artifacts/export/dr_model.tflite --int8 --representative-dir "$REPR_DIR"
+          if python -m retinaedge.export.export_tflite --direct --config "$CONFIG_PATH" --ckpt "$CKPT" \
+              --out artifacts/export/dr_model.tflite --int8 --representative-dir "$REPR_DIR"; then
+            echo "converted via ai-edge-torch (full integer)"
+          else
+            echo "::warning::ai-edge-torch int8 path failed - falling back to onnx2tf + TFLiteConverter"
+            python -m pip install -q "tensorflow-cpu>=2.16,<2.20" "onnx2tf>=1.26" "onnx-graphsurgeon>=0.5"
+            python -m retinaedge.export.export_tflite --onnx artifacts/export/model.onnx \
+              --out artifacts/export/dr_model.tflite --int8 --representative-dir "$REPR_DIR"
+          fi
           python -m retinaedge.export.metadata --model artifacts/export/dr_model.tflite \
             --out-dir artifacts/export
 
