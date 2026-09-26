@@ -1,0 +1,69 @@
+# --- Data & artifacts (never commit patient data) ---
+data/
+!data/README.md
+artifacts/
+!artifacts/README.md
+runs/
+outputs/
+
+# Model binaries go to GitHub Releases (or LFS), not git
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.tflite
+*.h5
+*.pb
+*.keras
+*.safetensors
+!tests/fixtures/**/*.onnx
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+.python-version
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Env & secrets (NEVER commit tokens/keys)
+.env
+.env.*
+*.token
+kaggle.json
+gh_token*
+*_credentials*
+
+# Editors / OS
+.idea/
+.vscode/
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+*.apk
+*.aab
+!android/app/src/main/assets/labels.txt
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Demo
+demo/screenshots/

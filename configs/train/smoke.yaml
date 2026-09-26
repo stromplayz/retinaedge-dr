@@ -1,0 +1,40 @@
+# Smoke training config — 2 epochs on procedural synthetic data, CPU-friendly.
+# Purpose: prove the end-to-end pipeline (train -> eval -> export -> benchmark)
+# in CI and on laptops without downloading any dataset.
+data:
+  dataset: synthetic
+  img_size: 64
+  batch_size: 16
+  num_workers: 0
+  clahe_prob: 0.0          # synthetic images are not fundus photos
+  synthetic:
+    n_train: 240
+    n_val: 80
+    size: 64
+    seed: 0
+
+model:
+  backbone: mobilenetv3_small_100
+  pretrained: false         # keep smoke runs network-free
+  dropout: 0.1
+  num_grades: 5
+
+train:
+  epochs: 2
+  lr: 0.002
+  weight_decay: 0.01
+  warmup_epochs: 0
+  grad_clip: 5.0
+  amp: false
+  ema: false
+  sampler: false
+  patience: 5
+  seed: 0
+  save_dir: artifacts/smoke
+  loss:
+    ordinal_weight: 1.0
+    refer_weight: 0.3
+    focal_gamma: 0.0
+
+eval:
+  batch_size: 32
