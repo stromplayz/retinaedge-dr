@@ -57,6 +57,14 @@ sandbox CPU @160px** (onnxruntime, 40 runs).
 
 | Budget item | Target | Status |
 |---|---|---|
-| int8 TFLite size | ≤ 5 MB | pending first int8 export |
-| On-device latency (mid-range Android, 4 threads) | ≤ 150 ms @ 224px | pending on-device bench |
-| Server ONNX latency (2-core CPU) | ≤ 30 ms @ 224px | measured post-pilot |
+| TFLite size | ≤ 5 MB | ✅ **1.97 MB** dynamic-range int8 (`dr_model.tflite`, CI-built) · **1.83 MB** full-integer uint8 (`dr_model_full_integer_uint8.tflite`, locally verified from the same checkpoint: uint8 in / int8 out, max prob deviation 0.008 vs fp32) |
+| On-device latency (mid-range Android, 4 threads) | ≤ 150 ms @ 224px | pending on-device bench (server-side p50 1.47 ms @160px suggests large headroom) |
+| Server ONNX latency (2-core CPU) | ≤ 30 ms @ 224px | ✅ p50 1.47 ms @160px (2-core sandbox, onnxruntime, 40 runs) |
+
+### Android artifacts (release `v0.1.1-data-pilot`)
+
+| File | I/O | Size | Notes |
+|---|---|---|---|
+| `dr_model.tflite` | float32 → float32 | 1.97 MB | dynamic-range int8 weights, built by `export.yml` on GitHub Actions; drop into `android/app/src/main/assets/models/` |
+| `dr_model_full_integer_uint8.tflite` | uint8 → int8 | 1.83 MB | full-integer, verified max \|Δp\| 0.008 vs fp32; for NNAPI/int8-accelerated paths |
+| `model.onnx` | float32 → float32 | 6.12 MB | parity-gated vs PyTorch (max diff 1.8e-07); server/demo use |
