@@ -75,7 +75,7 @@ def build_ladder(budget: str) -> list[Stage]:
     if budget not in _BUDGETS:
         raise ValueError(f"budget must be one of {sorted(_BUDGETS)}, got {budget!r}")
     return [
-        Stage("s1-baseline", "budget epochs at default resolution", ()),
+        Stage("s1-baseline", "budget epochs at default resolution", ("train.epochs={e1}",)),
         Stage(
             "s2-longer-ema",
             "longer schedule + EMA weight averaging",

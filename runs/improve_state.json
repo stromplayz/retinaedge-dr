@@ -2,28 +2,8 @@
   "target": 0.97,
   "budget": "small",
   "goal_reached": false,
-  "best": {
-    "stage": "s1-baseline",
-    "variant": "soup",
-    "acc_refer": 0.6933333333333334,
-    "qwk": 0.0011077621721458097,
-    "sens_refer": 0.005434782608695652,
-    "spec_refer": 0.9975961538461539,
-    "ci95_lo": 0.6553046037792487,
-    "ci95_hi": 0.7289022051609733,
-    "ckpt": "runs/s1-baseline/best.pt",
-    "n": 600
-  },
-  "history": [
-    {
-      "stage": "s1-baseline",
-      "best_variant": "soup",
-      "acc_refer": 0.6933333333333334,
-      "qwk": 0.0011077621721458097,
-      "target_reached": false,
-      "elapsed_s": 34.49648332595825,
-      "ts": ""
-    }
-  ],
-  "updated_at": "2026-09-26T23:17:48Z"
+  "best": null,
+  "history": [],
+  "updated_at": "2026-09-26T23:59:00Z",
+  "note": "Campaign reset after local plumbing probe (runs/s1-baseline on a 600-image random-init slice was a loop verification, not a metrics run)."
 }

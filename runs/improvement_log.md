@@ -1,13 +1,10 @@
-## s1-baseline — budget epochs at default resolution
-*2026-09-26 23:17:48 UTC | overrides: `(config defaults)` | 34s*
+# RetinaEdge-DR Improvement Campaign Log
 
-| variant | QWK | QWK(cuts) | acc | acc(cuts) | acc_refer | sens | spec |
-|---|---|---|---|---|---|---|---|
-| base | 0.0000 | 0.0000 | 0.0500 | 0.2250 | 0.6933 | 0.0000 | 1.0000 |
-| tta | 0.0000 | 0.0000 | 0.0500 | 0.2250 | 0.6933 | 0.0000 | 1.0000 |
-| soup | 0.0000 | 0.0011 | 0.0500 | 0.2250 | 0.6933 | 0.0054 | 0.9976 |
-| soup+tta | 0.0000 | 0.0000 | 0.0500 | 0.2250 | 0.6933 | 0.0000 | 1.0000 |
+Goal: referable-DR accuracy >= 0.97 on the held-out validation split (Wilson CI lower
+bound gated). Each entry below is one ladder rung executed by
+`retinaedge.train.auto_improve`; state lives in `runs/improve_state.json`.
 
-**Best variant:** `soup` — acc_refer **0.6933** (95% Wilson CI [0.6553, 0.7289], n=600), QWK 0.0011
-**Goal 97.00%:** not reached (gap +27.67%)
-
+> Pre-campaign note: a local plumbing probe (600-image slice, random init, 1 epoch)
+> verified the full loop (train -> TTA -> soup -> threshold search -> Wilson CI ->
+> markdown log) end-to-end. Its numbers were a pipeline check, not a model result;
+> the campaign state was reset before the first in-GitHub run.
