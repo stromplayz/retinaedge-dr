@@ -1,0 +1,107 @@
+# Training workflow (manual dispatch) — per docs/INTERFACES.md §GitHub workflows.
+#
+# Default (smoke config, CPU runner) proves the wiring with zero secrets.
+# For a real run pick a train config, optionally download a Kaggle dataset first
+# (needs secrets KAGGLE_USERNAME / KAGGLE_KEY) and point `runner` at a GPU-capable
+# label (e.g. a self-hosted GPU runner) with `cpu_torch` unchecked.
+
+name: Train (dispatch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      config:
+        description: "Training config path (self-contained: embeds the data section)"
+        required: false
+        default: "configs/train/smoke.yaml"
+      overrides:
+        description: "Optional dotted overrides, space separated (e.g. train.epochs=10 data.img_size=96)"
+        required: false
+        default: ""
+      dataset_handle:
+        description: "Optional Kaggle dataset handle to download before training (e.g. aptos2019-blindness-detection)"
+        required: false
+        default: ""
+      dataset_name:
+        description: "Local dataset dir under data/ for the download (blank = use handle)"
+        required: false
+        default: ""
+      data_config:
+        description: "Optional configs/data/<name>.yaml passed to retinaedge.data.prepare after download"
+        required: false
+        default: ""
+      artifact_dir:
+        description: "Directory to upload as the train-artifacts (root of train.save_dir outputs)"
+        required: false
+        default: "artifacts/"
+      cpu_torch:
+        description: "CPU-only torch (uncheck on GPU / self-hosted CUDA runners)"
+        type: boolean
+        default: true
+      runner:
+        description: "Runner label (ubuntu-latest, or a self-hosted GPU label)"
+        required: false
+        default: "ubuntu-latest"
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 360
+    env:
+      CONFIG_PATH: ${{ inputs.config }}
+      OVERRIDES: ${{ inputs.overrides }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-env
+        with:
+          cpu_torch: ${{ inputs.cpu_torch }}
+
+      - name: Preflight — trainer implemented?
+        run: |
+          if ! python -c "import retinaedge.train.trainer" 2>/dev/null; then
+            echo "::error::retinaedge.train.trainer is not implemented yet (docs/INTERFACES.md §Trainer, owner 2-b)."
+            exit 1
+          fi
+
+      - name: Download Kaggle dataset (optional)
+        if: inputs.dataset_handle != ''
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          HANDLE: ${{ inputs.dataset_handle }}
+          DEST: data/${{ inputs.dataset_name || inputs.dataset_handle }}
+        run: |
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
+            echo "::error::dataset_handle given but secrets KAGGLE_USERNAME/KAGGLE_KEY are not configured."
+            exit 1
+          fi
+          python -m retinaedge.data.download_kaggle --handle "$HANDLE" --dest "$DEST"
+
+      - name: Prepare dataset (optional)
+        if: inputs.data_config != ''
+        run: python -m retinaedge.data.prepare --config ${{ inputs.data_config }}
+
+      - name: Train
+        run: |
+          set -euo pipefail
+          ARGS=(--config "$CONFIG_PATH")
+          if [ -n "$OVERRIDES" ]; then
+            # Word splitting is intentional: each token is a dotted override like train.lr=3e-4
+            ARGS+=($OVERRIDES)
+          fi
+          python -m retinaedge.train.trainer "${ARGS[@]}"
+
+      - name: List training artifacts
+        run: find ${{ inputs.artifact_dir }} -maxdepth 3 -type f -print 2>/dev/null || true
+
+      - name: Upload train-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: train-artifacts
+          path: ${{ inputs.artifact_dir }}
+          retention-days: 14
+          if-no-files-found: error

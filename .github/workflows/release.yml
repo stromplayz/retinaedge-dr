@@ -1,0 +1,74 @@
+# Release workflow — per docs/INTERFACES.md §GitHub workflows.
+#
+# Tag v* -> run unit tests, build sdist+wheel, twine check, sanity-run the smoke
+# pipeline, then publish a GitHub Release with the distributions plus (when the
+# pipeline is implemented) the smoke sample model + metrics. Model binaries live in
+# Releases, never in git (.gitignore policy).
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-env
+        with:
+          extras: dev
+
+      - name: Run unit tests
+        run: python -m pytest -q -m "not slow"
+
+      - name: Install build tooling
+        run: python -m pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check distribution metadata
+        run: python -m twine check dist/*
+
+      - name: Preflight — pipeline modules implemented?
+        id: preflight
+        run: |
+          if python -c "import retinaedge.train.trainer, retinaedge.eval.evaluate, retinaedge.export.export_onnx, retinaedge.export.benchmark" 2>/dev/null; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::train/eval/export modules not implemented yet — release will ship the package only (no sample model)."
+          fi
+
+      - name: Run smoke pipeline (sample model + metrics)
+        if: steps.preflight.outputs.ready == 'true'
+        run: make smoke
+
+      - name: Write sample-model metadata
+        if: steps.preflight.outputs.ready == 'true'
+        continue-on-error: true
+        run: python -m retinaedge.export.metadata --model artifacts/smoke/model.onnx --out-dir artifacts/smoke
+
+      - name: Publish GitHub Release
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          FILES=(dist/*)
+          for f in artifacts/smoke/model.onnx artifacts/smoke/labels.txt artifacts/smoke/model_info.json \
+                   artifacts/smoke/metrics.json artifacts/smoke/eval.json artifacts/smoke/history.csv; do
+            if [ -f "$f" ]; then FILES+=("$f"); fi
+          done
+          echo "Attaching to release ${TAG}:"
+          printf '  %s\n' "${FILES[@]}"
+          gh release create "$TAG" "${FILES[@]}" --title "retinaedge-dr ${TAG}" --generate-notes

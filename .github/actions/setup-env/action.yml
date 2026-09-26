@@ -1,0 +1,47 @@
+name: "Setup RetinaEdge-DR environment"
+description: >-
+  Reusable environment setup shared by all RetinaEdge-DR workflows: Python + pip cache,
+  CPU-only torch/torchvision (optional), editable project install with extras.
+  Also creates a placeholder README.md when it is missing so the package can build
+  (temporary shim until the real README.md is committed — see docs/INTERFACES.md).
+
+inputs:
+  python_version:
+    description: "Python version to set up on the runner"
+    required: false
+    default: "3.11"
+  extras:
+    description: "pip extras to install with the editable project (comma separated)"
+    required: false
+    default: "dev"
+  cpu_torch:
+    description: "'true' installs torch/torchvision from the CPU wheel index first (keeps CI light)"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+        cache: pip
+        cache-dependency-path: pyproject.toml
+
+    - name: Ensure README.md exists (temporary shim until the real one lands)
+      shell: bash
+      run: |
+        if [ ! -f README.md ]; then
+          printf '# retinaedge-dr\n\nDiabetic Retinopathy detection at the mobile edge (PyTorch -> ONNX -> TFLite int8).\n' > README.md
+          echo "::notice::README.md was missing; a placeholder was created so the package can build. Commit the real README.md and drop this shim."
+        fi
+
+    - name: Install CPU-only torch/torchvision
+      if: inputs.cpu_torch == 'true'
+      shell: bash
+      run: python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+    - name: Install project (editable) with extras
+      shell: bash
+      run: python -m pip install -e ".[${{ inputs.extras }}]"

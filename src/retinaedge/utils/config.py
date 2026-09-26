@@ -7,8 +7,9 @@ Example:
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import yaml
 
@@ -49,7 +50,7 @@ def load_config(path: str | Path, overrides: Sequence[str] = ()) -> dict:
     cfg_path = Path(path)
     if not cfg_path.exists():
         raise FileNotFoundError(f"Config file not found: {cfg_path}")
-    with open(cfg_path, "r", encoding="utf-8") as handle:
+    with open(cfg_path, encoding="utf-8") as handle:
         cfg = yaml.safe_load(handle) or {}
     if not isinstance(cfg, dict):
         raise ValueError(f"Config root must be a mapping, got {type(cfg)!r} in {cfg_path}")

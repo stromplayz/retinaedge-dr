@@ -1,0 +1,131 @@
+# Export workflow (manual dispatch) — per docs/INTERFACES.md §GitHub workflows.
+#
+# Consumes the `train-artifacts` uploaded by train.yml, exports ONNX (with parity
+# check + benchmark), writes labels/model metadata, and optionally builds an int8
+# TFLite (heavy: pulls the export extras incl. TensorFlow via ai-edge-torch, and
+# needs a calibration dataset). Output contract: float32 (1,3,H,W) ImageNet-normalized
+# input -> float32 (1,5) grade probabilities.
+
+name: Export (dispatch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      train_run_id:
+        description: "train.yml run ID to pull artifacts from (blank = latest successful train run)"
+        required: false
+        default: ""
+      config:
+        description: "Training config the checkpoint was trained with"
+        required: false
+        default: "configs/train/smoke.yaml"
+      img_size:
+        description: "Export input size in px (smoke model: 64, production: 224)"
+        required: false
+        default: "64"
+      int8:
+        description: "Also export int8 TFLite (heavy; requires dataset_handle below for calibration)"
+        type: boolean
+        default: false
+      dataset_handle:
+        description: "Kaggle dataset handle for the int8 calibration set (required when int8=true)"
+        required: false
+        default: ""
+      dataset_name:
+        description: "Local dataset dir under data/ for the calibration download (blank = use handle)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CONFIG_PATH: ${{ inputs.config }}
+      IMG_SIZE: ${{ inputs.img_size }}
+      TRAIN_RUN_ID: ${{ inputs.train_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-env
+        with:
+          extras: ${{ inputs.int8 && 'dev,export' || 'dev' }}
+
+      - name: Resolve train run and download checkpoint artifact
+        run: |
+          set -euo pipefail
+          if [ -z "$TRAIN_RUN_ID" ]; then
+            TRAIN_RUN_ID=$(gh run list --workflow=train.yml --status=success --limit 1 \
+              --json databaseId --jq 'if length>0 then .[0].databaseId else "" end')
+          fi
+          if [ -z "$TRAIN_RUN_ID" ]; then
+            echo "::error::No successful train.yml run found — run the Train (dispatch) workflow first, or pass train_run_id."
+            exit 1
+          fi
+          echo "Downloading train-artifacts from run $TRAIN_RUN_ID"
+          gh run download "$TRAIN_RUN_ID" --name train-artifacts --dir artifacts/train
+          find artifacts/train -maxdepth 3 -type f -print
+
+      - name: Download calibration dataset (optional, int8 only)
+        if: inputs.int8 && inputs.dataset_handle != ''
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          HANDLE: ${{ inputs.dataset_handle }}
+          DEST: data/${{ inputs.dataset_name || inputs.dataset_handle }}
+        run: |
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
+            echo "::error::dataset_handle given but secrets KAGGLE_USERNAME/KAGGLE_KEY are not configured."
+            exit 1
+          fi
+          python -m retinaedge.data.download_kaggle --handle "$HANDLE" --dest "$DEST"
+
+      - name: Preflight — export modules implemented?
+        run: |
+          if ! python -c "import retinaedge.export.export_onnx, retinaedge.export.benchmark" 2>/dev/null; then
+            echo "::error::retinaedge.export modules are not implemented yet (docs/INTERFACES.md §Export, owner 2-c)."
+            exit 1
+          fi
+
+      - name: Export ONNX + verify parity + benchmark
+        run: |
+          set -euo pipefail
+          CKPT=$(find artifacts/train -name best.pt | head -1)
+          if [ -z "$CKPT" ]; then
+            echo "::error::best.pt not found in the train-artifacts."
+            exit 1
+          fi
+          mkdir -p artifacts/export
+          python -m retinaedge.export.export_onnx --config "$CONFIG_PATH" --ckpt "$CKPT" \
+            --out artifacts/export/model.onnx --img-size "$IMG_SIZE"
+          python -m retinaedge.export.benchmark --model artifacts/export/model.onnx \
+            --backend onnxruntime --img-size "$IMG_SIZE" --runs 50
+
+      - name: Write model metadata (labels.txt + model_info.json)
+        continue-on-error: true
+        run: python -m retinaedge.export.metadata --model artifacts/export/model.onnx --out-dir artifacts/export
+
+      - name: Export int8 TFLite (optional)
+        if: inputs.int8
+        env:
+          REPR_DIR: data/${{ inputs.dataset_name || inputs.dataset_handle }}/images
+        run: |
+          set -euo pipefail
+          CKPT=$(find artifacts/train -name best.pt | head -1)
+          python -m retinaedge.export.export_tflite --direct --config "$CONFIG_PATH" --ckpt "$CKPT" \
+            --out artifacts/export/dr_model.tflite --int8 --representative-dir "$REPR_DIR"
+          python -m retinaedge.export.metadata --model artifacts/export/dr_model.tflite \
+            --out-dir artifacts/export
+
+      - name: Upload export-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-artifacts
+          path: artifacts/export/
+          retention-days: 30
+          if-no-files-found: error
