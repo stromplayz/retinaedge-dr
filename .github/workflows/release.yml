@@ -60,7 +60,9 @@ jobs:
         continue-on-error: true
         run: python -m retinaedge.export.metadata --model artifacts/smoke/model.onnx --out-dir artifacts/smoke
 
-      - name: Publish GitHub Release
+      - name: Publish GitHub Release (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -71,4 +73,9 @@ jobs:
           done
           echo "Attaching to release ${TAG}:"
           printf '  %s\n' "${FILES[@]}"
-          gh release create "$TAG" "${FILES[@]}" --title "retinaedge-dr ${TAG}" --generate-notes
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release ${TAG} already exists — uploading/refreshing assets only."
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            gh release create "$TAG" "${FILES[@]}" --title "retinaedge-dr ${TAG}" --generate-notes
+          fi
