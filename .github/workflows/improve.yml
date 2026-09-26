@@ -75,7 +75,7 @@ jobs:
       INPUTS_HF: ${{ inputs.hf_repo || '' }}
       INPUTS_REQUIRE_CI: ${{ inputs.require_ci || false }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload run artifacts (thresholds, eval jsons)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: improve-run
           path: |
