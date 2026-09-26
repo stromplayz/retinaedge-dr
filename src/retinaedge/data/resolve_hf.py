@@ -105,6 +105,37 @@ NAME_TO_GRADE: dict[str, int] = {
 
 MAX_ROWS_DEFAULT = 60_000
 
+#: Canonical APTOS 2019 train distribution per ICDRSS grade 0..4 (public knowledge).
+#: Some HF mirrors store grades as ALPHABETICAL class indices (Mild=0, Moderate=1,
+#: NoDR=2, PDR=3, Severe=4); the multiset of counts matches this reference exactly,
+#: which lets us detect and repair the permutation deterministically.
+APTOS_REFERENCE_COUNTS = (1805, 370, 999, 194, 294)
+
+#: alphabetical index -> ICDRSS grade (Mild, Moderate, NoDR, PDR, Severe)
+ALPHA_INDEX_TO_GRADE = {0: 1, 1: 2, 2: 0, 3: 4, 4: 3}
+
+
+def repair_aptos_permutation(
+    counts: Sequence[int],
+    reference: Sequence[int] = APTOS_REFERENCE_COUNTS,
+    min_match: float = 0.97,
+) -> list[int] | None:
+    """If ``counts`` is a permutation of the canonical APTOS distribution, recover it.
+
+    Returns the permutation ``p`` (alpha/stored index -> true ICDRSS grade) when the
+    multiset matches the reference with >= ``min_match`` total agreement, else None.
+    """
+    from itertools import permutations
+
+    if len(counts) != 5 or len(reference) != 5 or sum(counts) != sum(reference):
+        return None
+    best_perm, best_score = None, 0.0
+    for perm in permutations(range(5)):
+        score = sum(min(counts[i], reference[perm[i]]) for i in range(5)) / sum(reference)
+        if score > best_score:
+            best_perm, best_score = list(perm), score
+    return best_perm if best_score >= min_match else None
+
 
 class UnmappableGrades(ValueError):
     """Raised when a candidate's label column cannot be mapped to ICDRSS 0-4."""
@@ -379,6 +410,7 @@ def resolve_dataset(
     max_bytes: int = 4_000_000_000,
     bake_ben_graham: bool = False,
     probe_rows: int = 40,
+    label_map: str = "auto",
 ) -> Resolved:
     """Search → validate → download → normalize one DR dataset. See module docstring."""
     ClassLabel, HfApi, _HfHubHTTPError, load_dataset = _hf_imports()
@@ -460,6 +492,24 @@ def resolve_dataset(
                 return None
 
         grades_col = [_grade_of(v) for v in ds[label_col]]
+        scheme_used = scheme
+        present = [g for g in grades_col if g is not None]
+        if label_map == "alpha":
+            # Force the alphabetical-index -> ICDRSS mapping (Mild=0, Moderate=1,
+            # NoDR=2, PDR=3, Severe=4 as stored by some mirrors).
+            grades_col = [
+                ALPHA_INDEX_TO_GRADE.get(g) if g is not None else None for g in grades_col
+            ]
+            scheme_used = "alpha_label_map"
+        elif label_map == "auto" and "aptos" in ds_id.lower() and len(set(present)) == 5:
+            from collections import Counter as _Counter
+
+            counts = _Counter(present)
+            perm = repair_aptos_permutation([counts.get(i, 0) for i in range(5)])
+            if perm is not None:
+                grades_col = [perm[g] if g is not None else None for g in grades_col]
+                scheme_used = "icdrss5_aptos_permutation_repaired"
+                logger.info("  applied APTOS permutation repair %s", perm)
         ds = ds.add_column("_grade", grades_col)
         ds = ds.filter(lambda row: row["_grade"] is not None)
 
@@ -481,7 +531,7 @@ def resolve_dataset(
             split=split_name,
             image_col=probe["image_col"],
             label_col=label_col,
-            scheme=scheme if feature_map is None else scheme,
+            scheme=scheme_used,
             n_images=n,
             grade_counts={str(k): int(v) for k, v in sorted(counter.items())},
             baked_ben_graham=bake_ben_graham,
@@ -535,6 +585,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="apply Ben-Graham preprocess once at resolve time (saves CPU per epoch)",
     )
+    parser.add_argument(
+        "--label-map",
+        choices=("auto", "none", "alpha"),
+        default="auto",
+        help="auto: repair known APTOS permutations; alpha: force alphabetical-index map; none: trust ints",
+    )
     parser.add_argument("--json", default=None, help="also copy provenance.json to this path")
     args = parser.parse_args(argv)
 
@@ -544,6 +600,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_images=args.max_images,
         max_bytes=args.max_bytes,
         bake_ben_graham=args.bake_ben_graham,
+        label_map=args.label_map,
     )
     if args.json:
         Path(args.json).parent.mkdir(parents=True, exist_ok=True)

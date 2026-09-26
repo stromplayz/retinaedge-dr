@@ -109,3 +109,36 @@ class TestWriteLayout:
             rows.append({"image": {"bytes": bio.getvalue()}, "_grade": 0})
         n, _ = _write_layout(iter(rows), "image", "_grade", None, tmp_path, 3, False)
         assert n == 3
+
+
+class TestAptosPermutationRepair:
+    def test_detects_alphabetical_mirror(self) -> None:
+        from retinaedge.data.resolve_hf import ALPHA_INDEX_TO_GRADE, repair_aptos_permutation
+
+        # counts observed in the wild (alphabetical mirror): {0:370,1:999,2:1805,3:295,4:193}
+        counts = [370, 999, 1805, 295, 193]
+        perm = repair_aptos_permutation(counts)
+        assert perm is not None
+        assert perm == [1, 2, 0, 4, 3]  # stored alpha index -> true ICDRSS grade
+        # sanity: alpha mapping recovers the canonical counts (this mirror is off by ±1)
+        can = [0] * 5
+        for stored, count in enumerate(counts):
+            can[ALPHA_INDEX_TO_GRADE[stored]] += count
+        assert sum(a == b for a, b in zip(can, [1805, 370, 999, 194, 294], strict=True)) >= 3
+
+    def test_canonical_distribution_untouched(self) -> None:
+        from retinaedge.data.resolve_hf import repair_aptos_permutation
+
+        perm = repair_aptos_permutation([1805, 370, 999, 194, 294])
+        assert perm == [0, 1, 2, 3, 4]  # identity when already canonical
+
+    def test_non_matching_distribution_ignored(self) -> None:
+        from retinaedge.data.resolve_hf import repair_aptos_permutation
+
+        assert repair_aptos_permutation([500, 500, 500, 500, 500]) is None
+        assert repair_aptos_permutation([1, 2, 3]) is None
+
+    def test_label_map_alpha_mapping(self) -> None:
+        from retinaedge.data.resolve_hf import ALPHA_INDEX_TO_GRADE
+
+        assert [ALPHA_INDEX_TO_GRADE[i] for i in range(5)] == [1, 2, 0, 4, 3]
