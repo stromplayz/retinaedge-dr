@@ -280,6 +280,10 @@ def export_onnx_to_tflite(
 
         result = subprocess.run(cmd, check=False, capture_output=True, text=True, cwd=tmpdir)
         if result.returncode != 0 and mode == "full-int8":
+            logger.warning(
+                "full-integer onnx2tf stderr tail: %s",
+                (result.stderr or result.stdout or "")[-600:].replace("\n", " | "),
+            )
             dyn = _dyn_flag()
             if dyn:
                 logger.warning(
