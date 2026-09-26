@@ -35,6 +35,14 @@ on:
         description: "Local dataset dir under data/ for the calibration download (blank = use handle)"
         required: false
         default: ""
+      hf_repo:
+        description: "HF dataset id for int8 calibration (alternative to Kaggle; e.g. the train-online source)"
+        required: false
+        default: ""
+      hf_calib_images:
+        description: "How many images to resolve from the HF repo for calibration"
+        required: false
+        default: "300"
 
 permissions:
   contents: read
@@ -71,7 +79,7 @@ jobs:
           gh run download "$TRAIN_RUN_ID" --name train-artifacts --dir artifacts/train
           find artifacts/train -maxdepth 3 -type f -print
 
-      - name: Download calibration dataset (optional, int8 only)
+      - name: Download calibration dataset (Kaggle, optional, int8 only)
         if: inputs.int8 && inputs.dataset_handle != ''
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
@@ -84,6 +92,24 @@ jobs:
             exit 1
           fi
           python -m retinaedge.data.download_kaggle --handle "$HANDLE" --dest "$DEST"
+
+      - name: Resolve calibration subset from HF Hub (int8 only)
+        if: inputs.int8 && inputs.hf_repo != ''
+        run: |
+          python -m pip install -q "datasets>=2.19" "huggingface_hub>=0.23"
+          python -m retinaedge.data.resolve_hf --repo "${{ inputs.hf_repo }}" \
+            --out data/hf_calib --max-images ${{ inputs.hf_calib_images }} \
+            --bake-ben-graham --label-map auto
+          ls data/hf_calib/images | wc -l
+
+      - name: Set representative dir
+        if: inputs.int8
+        run: |
+          if [ -n "${{ inputs.hf_repo }}" ]; then
+            echo "REPR_DIR=data/hf_calib/images" >> "$GITHUB_ENV"
+          else
+            echo "REPR_DIR=data/${{ inputs.dataset_name || inputs.dataset_handle }}/images" >> "$GITHUB_ENV"
+          fi
 
       - name: Preflight — export modules implemented?
         run: |
@@ -110,10 +136,8 @@ jobs:
         continue-on-error: true
         run: python -m retinaedge.export.metadata --model artifacts/export/model.onnx --out-dir artifacts/export
 
-      - name: Export int8 TFLite (optional)
+      - name: Export int8 TFLite (direct path)
         if: inputs.int8
-        env:
-          REPR_DIR: data/${{ inputs.dataset_name || inputs.dataset_handle }}/images
         run: |
           set -euo pipefail
           CKPT=$(find artifacts/train -name best.pt | head -1)
