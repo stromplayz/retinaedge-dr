@@ -55,10 +55,27 @@ git push origin v0.2.0            # release.yml takes over
 
 The repo ships a devcontainer (Python 3.11 + JDK 17 + Gradle): **Code → Codespaces →
 Create codespace on main**. Post-create runs `pip install -e ".[dev]"` and `verify_env`.
-From there you can run `make smoke`, the Gradio demo (port 7860 is forwarded), and even the
-Android Gradle build (`./gradlew :app:assembleDebug` inside `android/`) — no local install
-needed. Kaggle credentials can be forwarded from your machine via the `remoteEnv` mapping
-(they are never persisted in the container).
+Training *inside* the Codespace (2-core free machine, ~60 free core-hours/month):
+
+```bash
+# 1. Full synthetic pipeline proof (~2 min on the 2-core machine)
+make smoke
+
+# 2. Real-data training inside the Codespace (recommended for CPU pilots)
+export KAGGLE_USERNAME=... KAGGLE_KEY=...          # optional, for Kaggle sources
+python -m retinaedge.data.resolve_hf --out data/online_dr \
+    --bake-ben-graham --json provenance.json       # pulls a real DR dataset from HF Hub
+python -m retinaedge.train.trainer --config configs/train/online_pilot.yaml
+python -m retinaedge.eval.evaluate --config configs/train/online_pilot.yaml \
+    --ckpt artifacts/online/best.pt --split val
+python -m retinaedge.export.export_onnx --config configs/train/online_pilot.yaml \
+    --ckpt artifacts/online/best.pt --out artifacts/online/model.onnx --img-size 160
+```
+
+The same flow runs unattended via **Actions → "Train online (real data on runner)"** —
+that is the recommended path (artifacts are uploaded automatically and `export.yml`
+can consume them for TFLite conversion). Stop or delete idle Codespaces to conserve
+the free storage quota. The Gradio demo (port 7860) is forwarded automatically.
 
 ## Notes & limits
 
