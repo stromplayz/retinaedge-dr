@@ -146,6 +146,35 @@ def _try_aet_int8_config(aet, wrapper, sample, representative):
         return None
 
 
+def _dump_calib_batches(
+    representative: RepresentativeDataset,
+    tmp: Path,
+    max_batches: int = 40,
+    input_name: str = "image",
+) -> str | None:
+    """Dump representative calibration batches as .npy files for onnx2tf.
+
+    Returns the ``op_name,file.npy[,op_name,file.npy...]`` argument string, or
+    None when nothing could be dumped.
+    """
+    import numpy as np
+
+    files: list[str] = []
+    for i, batch in enumerate(representative):
+        if i >= max_batches:
+            break
+        arr = batch[0] if isinstance(batch, tuple) else batch
+        arr = np.asarray(arr, dtype=np.float32)
+        if arr.ndim == 3:  # (H, W, C) -> add batch dim
+            arr = arr[np.newaxis, ...]
+        f = tmp / f"calib_{i:04d}.npy"
+        np.save(f, arr)
+        files.extend([input_name, str(f)])
+    if not files:
+        return None
+    return ",".join(files)
+
+
 def export_onnx_to_tflite(
     onnx_path: str | Path,
     out_path: str | Path,
@@ -153,14 +182,21 @@ def export_onnx_to_tflite(
     representative: RepresentativeDataset | None = None,
     onnx2tf_bin: str = "onnx2tf",
 ) -> Path:
-    """ONNX -> SavedModel (``onnx2tf``) -> TFLite (``tf.lite.TFLiteConverter``).
+    """ONNX -> TFLite via ``onnx2tf >= 2.x`` (direct MLIR conversion).
 
-    With ``int8=True`` the converter runs strict full-integer PTQ over
-    ``representative`` and produces uint8 input/output tensors (export contract);
-    if a couple of ops refuse strict int8, a single ``SELECT_TF_OPS`` retry keeps
-    the pipeline moving with a loud warning (no longer a pure-int8 graph).
+    onnx2tf 2.x no longer emits a SavedModel and dropped ``--output_saved_model``,
+    so the old convert-via-SavedModel route is gone. Conversion strategy:
+
+    * ``int8=True`` + representative data -> ``--output_integer_quantized_tflite``
+      with calibration batches dumped from :class:`RepresentativeDataset`
+      (full-integer uint8 I/O per the export contract);
+    * full-int8 failure -> ``--output_dynamic_range_quantized_tflite``
+      (int8 weights, float32 I/O — still valid for the Android reader);
+    * otherwise plain float32 TFLite.
+
+    The output contract is unchanged: ImageNet-normalized float32 (1,3,H,W) in,
+    (1,5) grade probabilities out (uint8 I/O only in the full-integer artifact).
     """
-    tf = _require_tensorflow()
     if shutil.which(onnx2tf_bin) is None:
         raise RuntimeError(
             f"'{onnx2tf_bin}' executable not found — pip install onnx2tf (extra: '.[export]')"
@@ -169,55 +205,70 @@ def export_onnx_to_tflite(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="retinaedge_onnx2tf_") as tmp:
-        saved_model_dir = Path(tmp) / "saved_model"
-        cmd = [
-            onnx2tf_bin,
-            "-i",
-            str(onnx_path),
-            "-o",
-            str(saved_model_dir),
-            "--output_saved_model",
-            "--non_verbose",
-        ]
-        logger.info("running: %s", " ".join(cmd))
+        tmpdir = Path(tmp)
+        outdir = tmpdir / "out"
+        outdir.mkdir()
+        mode = "fp32"
+        cmd = [onnx2tf_bin, "-i", str(onnx_path), "-o", str(outdir), "--non_verbose"]
+        if int8 and representative is not None:
+            calib = _dump_calib_batches(representative, tmpdir)
+            if calib is not None:
+                cmd += [
+                    "--output_integer_quantized_tflite",
+                    "--input_quant_dtype",
+                    "QUINT8",
+                    "--quant_calib_input_op_name_np_data_path",
+                    calib,
+                ]
+                mode = "full-int8"
+            else:
+                logger.warning("no calibration batches could be dumped — using dynamic-range quant")
+        if int8 and mode == "fp32":
+            cmd += ["--output_dynamic_range_quantized_tflite"]
+            mode = "dynamic-range"
+
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        if result.returncode != 0 and mode == "full-int8":
+            logger.warning(
+                "full-int8 onnx2tf failed (exit %s) — retrying as dynamic-range quantization",
+                result.returncode,
+            )
+            mode = "dynamic-range"
+            cmd = [
+                onnx2tf_bin,
+                "-i",
+                str(onnx_path),
+                "-o",
+                str(outdir),
+                "--non_verbose",
+                "--output_dynamic_range_quantized_tflite",
+            ]
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(
                 f"onnx2tf failed (exit {result.returncode}):\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
             )
 
-        converter = tf.lite.TFLiteConverter.from_saved_model(str(saved_model_dir))
-        if int8:
-            converter.optimizations = [tf.lite.Optimize.DEFAULT]
-            if representative is not None:
-                converter.representative_dataset = lambda: representative  # noqa: B023 - local var
-            else:
-                logger.warning(
-                    "int8 requested without --representative-dir: calibrating on a seeded "
-                    "synthetic stream — prefer real fundus images for accurate ranges."
-                )
-            converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-            converter.inference_input_type = tf.uint8
-            converter.inference_output_type = tf.uint8
-        try:
-            tflite_bytes = converter.convert()
-        except (RuntimeError, ValueError) as exc:
-            if not int8:
-                raise
-            logger.warning(
-                "strict full-int8 conversion failed (%s); retrying with SELECT_TF_OPS "
-                "fallback — the graph is NO LONGER pure-int8",
-                exc,
-            )
-            converter.target_spec.supported_ops = [
-                tf.lite.OpsSet.TFLITE_BUILTINS_INT8,
-                tf.lite.OpsSet.SELECT_TF_OPS,
-            ]
-            converter.allow_custom_ops = True
-            tflite_bytes = converter.convert()
+        produced = sorted(outdir.rglob("*.tflite"))
+        if not produced:
+            raise RuntimeError(f"onnx2tf produced no .tflite under {outdir}")
+        pick = produced[-1]
+        for cand in produced:
+            name = cand.name.lower()
+            if mode == "full-int8" and "integer" in name:
+                pick = cand
+            elif mode == "dynamic-range" and "dynamic" in name:
+                pick = cand
+        shutil.copyfile(pick, out_path)
+        logger.info(
+            "onnx2tf artifacts: %s (picked %s, mode=%s)",
+            [p.name for p in produced],
+            pick.name,
+            mode,
+        )
 
-    out_path.write_bytes(tflite_bytes)
-    logger.info("wrote %s (%.2f MB, int8=%s)", out_path, len(tflite_bytes) / 1e6, int8)
+    size_mb = out_path.stat().st_size / 1e6
+    logger.info("wrote %s (%.2f MB, mode=%s)", out_path, size_mb, mode)
     return out_path
 
 
