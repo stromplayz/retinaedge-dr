@@ -60,6 +60,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free runner disk (remove preinstalled bloat)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune -af > /dev/null 2>&1 || true
+          df -h / | tail -1
+
       - uses: ./.github/actions/setup-env
         with:
           extras: ${{ inputs.int8 && 'dev,export' || 'dev' }}
