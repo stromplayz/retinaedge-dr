@@ -1,0 +1,144 @@
+# Train on REAL data INSIDE GitHub Actions (manual dispatch).
+#
+# Pipeline: resolve a real DR/fundus dataset from the Hugging Face Hub (or Kaggle
+# mirror fallback) -> train the CPU pilot config -> evaluate -> calibrate ->
+# export ONNX (parity-gated) -> benchmark -> upload artifacts.
+#
+# No Kaggle secrets needed for the HF path (public datasets download anonymously).
+# Artifacts are uploaded under the name `train-artifacts` so the existing
+# export.yml workflow can consume them for TFLite conversion afterwards.
+
+name: Train online (real data on runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      hf_repo:
+        description: "Explicit HF dataset id (blank = auto-search aptos/diabetic retinopathy/fundus)"
+        required: false
+        default: ""
+      config:
+        description: "Training config"
+        required: false
+        default: "configs/train/online_pilot.yaml"
+      overrides:
+        description: "Optional dotted overrides (e.g. train.epochs=5 data.img_size=128)"
+        required: false
+        default: ""
+      bake_ben_graham:
+        description: "Bake Ben-Graham preprocess into resolved images (recommended)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  HF_HUB_DISABLE_PROGRESS_BARS: "1"
+
+jobs:
+  train-online:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      CONFIG_PATH: ${{ inputs.config }}
+      OVERRIDES: ${{ inputs.overrides }}
+      HF_REPO: ${{ inputs.hf_repo }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-env
+        with:
+          extras: dev
+          cpu_torch: "true"
+
+      - name: Install Hub dataset stack
+        run: python -m pip install "datasets>=2.19" "huggingface_hub>=0.23"
+
+      - name: Resolve real dataset from Hugging Face Hub
+        run: |
+          set -euo pipefail
+          ARGS=(--out data/online_dr --json artifacts/online/provenance.json)
+          if [ "${{ inputs.bake_ben_graham }}" = "true" ]; then ARGS+=(--bake-ben-graham); fi
+          if [ -n "$HF_REPO" ]; then ARGS+=(--repo "$HF_REPO"); fi
+          python -m retinaedge.data.resolve_hf "${ARGS[@]}"
+          echo "### Resolved dataset" >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, pathlib
+          p = pathlib.Path("data/online_dr/provenance.json")
+          d = json.loads(p.read_text())
+          print(f"- source: `{d['repo_id']}` @ {d['revision'][:12]}")
+          print(f"- license: {d['license']} | label scheme: `{d['scheme']}`")
+          print(f"- images: {d['n_images']} | grades: {d['grade_counts']}")
+          print(f"- ben-graham baked: {d['baked_ben_graham']}")
+          PY
+
+      - name: Free Hub cache (images already normalized to data/online_dr)
+        run: |
+          rm -rf ~/.cache/huggingface/datasets ~/.cache/huggingface/hub ~/.cache/huggingface/xet || true
+          du -sh data/online_dr
+
+      - name: Train (real data, on this runner)
+        run: |
+          set -euo pipefail
+          OVR=()
+          if [ -n "$OVERRIDES" ]; then
+            read -r -a OVR <<< "$OVERRIDES"
+          fi
+          python -m retinaedge.train.trainer --config "$CONFIG_PATH" "${OVR[@]}"
+
+      - name: Evaluate + calibrate
+        run: |
+          set -euo pipefail
+          OVR=()
+          if [ -n "$OVERRIDES" ]; then read -r -a OVR <<< "$OVERRIDES"; fi
+          python -m retinaedge.eval.evaluate --config "$CONFIG_PATH" \
+            --ckpt artifacts/online/best.pt --split val "${OVR[@]}"
+          python -m retinaedge.eval.calibration --config "$CONFIG_PATH" \
+            --ckpt artifacts/online/best.pt --out artifacts/online/temperature.json "${OVR[@]}"
+
+      - name: Export ONNX (parity-gated) + benchmark + metadata
+        run: |
+          set -euo pipefail
+          IMG_SIZE=$(python -c "import yaml;print(yaml.safe_load(open('$CONFIG_PATH'))['data']['img_size'])")
+          python -m retinaedge.export.export_onnx --config "$CONFIG_PATH" \
+            --ckpt artifacts/online/best.pt --out artifacts/online/model.onnx \
+            --img-size "$IMG_SIZE"
+          python -m retinaedge.export.benchmark --model artifacts/online/model.onnx \
+            --backend onnxruntime --img-size "$IMG_SIZE" --runs 30
+          TEMP=$(python -c "import json;print(json.load(open('artifacts/online/temperature.json'))['temperature'])" 2>/dev/null || echo 1.0)
+          python -m retinaedge.export.metadata --model artifacts/online/model.onnx \
+            --out-dir artifacts/online --temperature "$TEMP"
+
+      - name: Job summary (metrics)
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY" || true
+          import json, pathlib
+          rows = []
+          for name in ("metrics.json", "eval.json", "provenance.json"):
+              p = pathlib.Path("artifacts/online") / name
+              if p.exists():
+                  rows.append((name, json.loads(p.read_text())))
+          print("### Artifacts summary")
+          for name, data in rows:
+              print(f"<details><summary>{name}</summary>\n\n```json\n{json.dumps(data, indent=2)[:1800]}\n```\n</details>")
+          PY
+
+      - name: Upload train-artifacts (export.yml compatible)
+        uses: actions/upload-artifact@v4
+        with:
+          name: train-artifacts
+          path: |
+            artifacts/online/best.pt
+            artifacts/online/metrics.json
+            artifacts/online/eval.json
+            artifacts/online/temperature.json
+            artifacts/online/history.csv
+            artifacts/online/model.onnx
+            artifacts/online/labels.txt
+            artifacts/online/model_info.json
+            artifacts/online/provenance.json
+          retention-days: 30
+          if-no-files-found: error

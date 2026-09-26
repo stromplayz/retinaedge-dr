@@ -1,0 +1,45 @@
+# CPU-pilot training on a REAL fundus dataset resolved at runtime (Hugging Face Hub).
+# Used by .github/workflows/train-online.yml — runs entirely inside GitHub Actions.
+#
+# The resolver (retinaedge.data.resolve_hf) searches the Hub, validates image+grade
+# columns, maps labels to ICDRSS 0-4 (provenance.json records scheme + source) and
+# writes the standard images/ + labels.csv layout. Ben-Graham crop is baked once at
+# resolve time (--bake-ben-graham) so epochs stay cheap on 2-core runners; CLAHE
+# remains a random train-time augmentation (clahe_prob=0.5) for on-device robustness.
+data:
+  dataset: aptos            # generic images/ + labels.csv reader
+  root: data/online_dr      # written by resolve_hf in the workflow
+  img_size: 160             # CPU-runner friendly; export contract supports any HxW
+  batch_size: 32
+  num_workers: 3
+  clahe_prob: 0.5
+  ben_graham: false         # already baked into the resolved images
+  val_fraction: 0.15
+  test_fraction: 0.05
+  split_salt: online_v1
+
+model:
+  backbone: mobilenetv3_small_100
+  pretrained: true          # ImageNet init via timm (runner has HF access)
+  dropout: 0.2
+  num_grades: 5
+
+train:
+  epochs: 8
+  lr: 0.001
+  weight_decay: 0.02
+  warmup_epochs: 1
+  grad_clip: 5.0
+  amp: false                # CPU AMP bf16 is not consistently faster on 2 vCPU
+  ema: false
+  sampler: true             # DR datasets are heavily imbalanced
+  patience: 3
+  seed: 42
+  save_dir: artifacts/online
+  loss:
+    ordinal_weight: 1.0
+    refer_weight: 0.3
+    focal_gamma: 2.0
+
+eval:
+  batch_size: 64
