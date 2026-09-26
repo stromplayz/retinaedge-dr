@@ -1,7 +1,7 @@
 # --- Data & artifacts (never commit patient data) ---
-data/
+/data/
 !data/README.md
-artifacts/
+/artifacts/
 !artifacts/README.md
 runs/
 outputs/
