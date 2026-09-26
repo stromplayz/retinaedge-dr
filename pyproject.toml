@@ -64,7 +64,7 @@ demo = [
 export = [
   "onnx>=1.15",
   "onnxruntime>=1.17",
-  "onnx2tf>=2.6",
+  "onnx2tf>=1.26,<3",
   "onnx-graphsurgeon>=0.5",
   "ai-edge-torch>=0.3",
 ]

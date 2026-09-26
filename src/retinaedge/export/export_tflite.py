@@ -146,6 +146,22 @@ def _try_aet_int8_config(aet, wrapper, sample, representative):
         return None
 
 
+def _onnx2tf_flags(onnx2tf_bin: str) -> dict[str, bool]:
+    """Sniff the installed onnx2tf's supported flags (1.x and 2.x differ)."""
+    probe = subprocess.run([onnx2tf_bin, "--help"], check=False, capture_output=True, text=True)
+    text = (probe.stdout or "") + (probe.stderr or "")
+    return {
+        flag: flag in text
+        for flag in (
+            "--output_integer_quantized_tflite",
+            "--output_dynamic_range_quantized_tflite",
+            "--output_weight_quantized_tflite",
+            "--input_quant_dtype",
+            "--quant_calib_input_op_name_np_data_path",
+        )
+    }
+
+
 def _dump_calib_batches(
     representative: RepresentativeDataset,
     tmp: Path,
@@ -208,42 +224,53 @@ def export_onnx_to_tflite(
         tmpdir = Path(tmp)
         outdir = tmpdir / "out"
         outdir.mkdir()
+        flags = _onnx2tf_flags(onnx2tf_bin)
         mode = "fp32"
-        cmd = [onnx2tf_bin, "-i", str(onnx_path), "-o", str(outdir), "--non_verbose"]
-        if int8 and representative is not None:
-            calib = _dump_calib_batches(representative, tmpdir)
-            if calib is not None:
-                cmd += [
+        base_cmd = [onnx2tf_bin, "-i", str(onnx_path), "-o", str(outdir), "--non_verbose"]
+
+        def _dyn_flag() -> str:
+            if flags["--output_dynamic_range_quantized_tflite"]:
+                return "--output_dynamic_range_quantized_tflite"
+            if flags["--output_weight_quantized_tflite"]:
+                return "--output_weight_quantized_tflite"  # onnx2tf 1.x name
+            return ""
+
+        if int8:
+            calib = (
+                _dump_calib_batches(representative, tmpdir) if representative is not None else None
+            )
+            if (
+                flags["--output_integer_quantized_tflite"]
+                and calib is not None
+                and flags["--quant_calib_input_op_name_np_data_path"]
+            ):
+                cmd = base_cmd + [
                     "--output_integer_quantized_tflite",
-                    "--input_quant_dtype",
-                    "QUINT8",
+                    *(["--input_quant_dtype", "QUINT8"] if flags["--input_quant_dtype"] else []),
                     "--quant_calib_input_op_name_np_data_path",
                     calib,
                 ]
                 mode = "full-int8"
             else:
-                logger.warning("no calibration batches could be dumped — using dynamic-range quant")
-        if int8 and mode == "fp32":
-            cmd += ["--output_dynamic_range_quantized_tflite"]
-            mode = "dynamic-range"
+                dyn = _dyn_flag()
+                if not dyn:
+                    logger.warning("onnx2tf has no quantization flags — falling back to fp32")
+                else:
+                    cmd = base_cmd + [dyn]
+                    mode = "dynamic-range"
+                logger.warning("no calibration stream / integer-quant support — using %s", mode)
 
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if result.returncode != 0 and mode == "full-int8":
-            logger.warning(
-                "full-int8 onnx2tf failed (exit %s) — retrying as dynamic-range quantization",
-                result.returncode,
-            )
-            mode = "dynamic-range"
-            cmd = [
-                onnx2tf_bin,
-                "-i",
-                str(onnx_path),
-                "-o",
-                str(outdir),
-                "--non_verbose",
-                "--output_dynamic_range_quantized_tflite",
-            ]
-            result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+            dyn = _dyn_flag()
+            if dyn:
+                logger.warning(
+                    "full-int8 onnx2tf failed (exit %s) — retrying as dynamic-range quantization",
+                    result.returncode,
+                )
+                mode = "dynamic-range"
+                cmd = base_cmd + [dyn]
+                result = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(
                 f"onnx2tf failed (exit {result.returncode}):\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"

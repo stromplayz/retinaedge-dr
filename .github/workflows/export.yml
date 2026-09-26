@@ -154,7 +154,7 @@ jobs:
           else
             echo "::warning::ai-edge-torch int8 path failed - falling back to onnx2tf + TFLiteConverter"
             python -m pip install -q "tensorflow-cpu>=2.16,<2.20" "tf_keras" \
-              "onnx2tf>=2.6" "onnx-graphsurgeon>=0.5" psutil sng4onnx
+              "onnx2tf>=1.26,<3" "onnx-graphsurgeon>=0.5" psutil sng4onnx
             if TF_USE_LEGACY_KERAS=1 python -m retinaedge.export.export_tflite \
                 --onnx artifacts/export/model.onnx \
                 --out artifacts/export/dr_model.tflite --int8 --representative-dir "$REPR_DIR"; then
