@@ -227,6 +227,7 @@ def export_onnx_to_tflite(
         flags = _onnx2tf_flags(onnx2tf_bin)
         mode = "fp32"
         base_cmd = [onnx2tf_bin, "-i", str(onnx_path), "-o", str(outdir), "--non_verbose"]
+        cmd = list(base_cmd)
 
         def _dyn_flag() -> str:
             if flags["--output_dynamic_range_quantized_tflite"]:
@@ -236,40 +237,62 @@ def export_onnx_to_tflite(
             return ""
 
         if int8:
+            # Robustness-first order: dynamic-range (int8 weights, float I/O —
+            # valid for the Android reader) -> full-integer with dumped calib -> fp32.
+            dyn = _dyn_flag()
+            calib_ok = (
+                flags["--output_integer_quantized_tflite"]
+                and flags["--quant_calib_input_op_name_np_data_path"]
+                and representative is not None
+            )
+            if dyn:
+                cmd = base_cmd + [dyn]
+                mode = "dynamic-range"
+            elif calib_ok:
+                calib = _dump_calib_batches(representative, tmpdir)
+                if calib is not None:
+                    cmd = base_cmd + [
+                        "--output_integer_quantized_tflite",
+                        *(
+                            ["--input_quant_dtype", "QUINT8"]
+                            if flags["--input_quant_dtype"]
+                            else []
+                        ),
+                        "--quant_calib_input_op_name_np_data_path",
+                        calib,
+                    ]
+                    mode = "full-int8"
+            if mode == "fp32":
+                logger.warning("no quantization support detected in onnx2tf — shipping fp32")
+
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        if result.returncode != 0 and mode == "dynamic-range":
+            # flag-name mismatch between 1.x/2.x? try the alternative name once.
+            alt = (
+                "--output_weight_quantized_tflite"
+                if _dyn_flag() == "--output_dynamic_range_quantized_tflite"
+                else "--output_dynamic_range_quantized_tflite"
+            )
+            if flags.get(alt):
+                mode = "dynamic-range"
+                cmd = base_cmd + [alt]
+                result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        if result.returncode != 0 and mode == "dynamic-range":
             calib = (
                 _dump_calib_batches(representative, tmpdir) if representative is not None else None
             )
-            if (
-                flags["--output_integer_quantized_tflite"]
-                and calib is not None
-                and flags["--quant_calib_input_op_name_np_data_path"]
-            ):
+            if calib is not None and flags["--output_integer_quantized_tflite"]:
+                logger.warning(
+                    "dynamic-range onnx2tf failed (exit %s) — last attempt: full-integer calibration",
+                    result.returncode,
+                )
+                mode = "full-int8"
                 cmd = base_cmd + [
                     "--output_integer_quantized_tflite",
                     *(["--input_quant_dtype", "QUINT8"] if flags["--input_quant_dtype"] else []),
                     "--quant_calib_input_op_name_np_data_path",
                     calib,
                 ]
-                mode = "full-int8"
-            else:
-                dyn = _dyn_flag()
-                if not dyn:
-                    logger.warning("onnx2tf has no quantization flags — falling back to fp32")
-                else:
-                    cmd = base_cmd + [dyn]
-                    mode = "dynamic-range"
-                logger.warning("no calibration stream / integer-quant support — using %s", mode)
-
-        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
-        if result.returncode != 0 and mode == "full-int8":
-            dyn = _dyn_flag()
-            if dyn:
-                logger.warning(
-                    "full-int8 onnx2tf failed (exit %s) — retrying as dynamic-range quantization",
-                    result.returncode,
-                )
-                mode = "dynamic-range"
-                cmd = base_cmd + [dyn]
                 result = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(
