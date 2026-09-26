@@ -96,10 +96,14 @@ Full walkthrough: **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
 
 ## Status
 
-- ✅ Core utils (config / seed / logging), ordinal ops, smoke config, interface contract
-- ✅ Docs, demo, notebooks (this delivery)
-- 🚧 Data pipeline, DrNet builder, trainer, eval/export modules (built against contract v1.0)
-- 🚧 Android client, GitHub workflows
+- ✅ Full pipeline: data → training → eval → calibration → ONNX export (parity-gated) → Android app
+- ✅ **Real-data pilot trained inside GitHub Actions** (run #2): APTOS 2019 (3,662 images) resolved
+  at runtime from the Hugging Face Hub — val **QWK 0.503**, referable-DR **AUC 0.846**, sensitivity
+  **0.916** @ spec 0.638, calibrated ECE **0.088**; ONNX 6.11 MB, parity 1.8e-07. Details and honest
+  caveats: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md), provenance in `provenance.json`.
+- ✅ CI green on `main` (lint + 92 tests + smoke pipeline on every push)
+- 🚧 int8 TFLite conversion for Android (export path wired; run "Export" with `int8=true`)
+- 🚧 Quality roadmap: 224px full training, external validation (Messidor-2 / IDRiD), on-device bench
 
 ## License
 
