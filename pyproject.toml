@@ -54,6 +54,10 @@ dev = [
   "onnx>=1.15",
   "onnxruntime>=1.17",
 ]
+hf = [
+  "datasets>=2.19",
+  "huggingface_hub>=0.23",
+]
 demo = [
   "gradio>=4.36",
 ]

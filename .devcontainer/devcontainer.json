@@ -1,0 +1,38 @@
+{
+  "name": "RetinaEdge-DR",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "17",
+      "installGradle": true
+    }
+  },
+  "postCreateCommand": "python3 -m pip install -e \".[dev]\" && python scripts/verify_env.py",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-toolsai.jupyter",
+        "timonwong.shellcheck"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      }
+    }
+  },
+  "remoteEnv": {
+    "KAGGLE_USERNAME": "${localEnv:KAGGLE_USERNAME}",
+    "KAGGLE_KEY": "${localEnv:KAGGLE_KEY}"
+  },
+  "forwardPorts": [7860],
+  "portsAttributes": {
+    "7860": { "label": "Gradio demo", "onAutoForward": "notify" }
+  }
+}

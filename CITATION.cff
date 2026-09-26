@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+title: "RetinaEdge-DR: Diabetic Retinopathy Detection at the Mobile Edge"
+message: >-
+  If you use this software in your research (as a baseline or tooling), please
+  cite the original datasets and clinical literature it builds upon (see
+  docs/ARCHITECTURE.md and docs/CLINICAL_NOTES.md) and this repository.
+type: software
+authors:
+  - name: stromplayz
+repository-code: "https://github.com/stromplayz/retinaedge-dr"
+abstract: >-
+  An open-source pipeline for 5-grade ordinal diabetic retinopathy grading
+  (ICDRSS) on retinal fundus photographs, trained with PyTorch/timm,
+  calibrated with temperature scaling, exported to ONNX and fully-integer
+  int8 TFLite, and shipped with an on-device Android reference app.
+keywords:
+  - diabetic retinopathy
+  - ordinal regression
+  - edge AI
+  - TFLite
+  - ONNX
+  - mobile health
+license: MIT
+version: 0.1.0
+date-released: "2026-09-26"

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RetinaEdge-DR launcher icon: fundus eye motif. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Background disc -->
+    <path
+        android:fillColor="#00696D"
+        android:pathData="M24,2 A22,22 0 1,1 23.99,2 Z" />
+
+    <!-- Eye almond -->
+    <path
+        android:fillColor="#F4FBFA"
+        android:pathData="M6,24 C12,14.5 18,11 24,11 C30,11 36,14.5 42,24 C36,33.5 30,37 24,37 C18,37 12,33.5 6,24 Z" />
+
+    <!-- Iris ring -->
+    <path
+        android:fillColor="#00B3A6"
+        android:pathData="M24,14.5 A9.5,9.5 0 1,1 23.99,14.5 Z" />
+
+    <!-- Pupil / fundus patch -->
+    <path
+        android:fillColor="#0B3B3E"
+        android:pathData="M24,17 A7,7 0 1,1 23.99,17 Z" />
+
+    <!-- Retinal vessel hint -->
+    <path
+        android:strokeColor="#E8604C"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M19.5,21.5 C21,23 22,24.5 22.5,26.5 M28.5,21.5 C27,23.5 26,25 25.5,27" />
+
+    <!-- Fovea highlight -->
+    <path
+        android:fillColor="#F7C59F"
+        android:pathData="M22,22 A1.6,1.6 0 1,1 21.99,22 Z" />
+</vector>

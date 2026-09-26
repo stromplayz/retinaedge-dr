@@ -33,9 +33,13 @@ def test_ordinal_probs_extreme_logits() -> None:
 
 
 def test_ordinal_probs_matches_hand_computation() -> None:
-    logits = torch.tensor([[0.0, 0.0, 0.0, 0.0]])
-    probs = ordinal_probs(logits)  # all cumulatives = 0.5 -> uniform
-    assert torch.allclose(probs, torch.full((1, 5), 0.2), atol=1e-5)
+    # Monotone cumulative logits: g = [2, 1, -1, -2] -> sigma = [.8808, .7311, .2689, .1192]
+    # P(y=k) = sigma(g_{k-1}) - sigma(g_k) with sigma(g_{-1})=1, sigma(g_3)=0
+    logits = torch.tensor([[2.0, 1.0, -1.0, -2.0]])
+    probs = ordinal_probs(logits)
+    expected = torch.tensor([[0.1192, 0.1497, 0.4622, 0.1497, 0.1192]])
+    assert torch.allclose(probs, expected, atol=1e-3)
+    assert torch.allclose(probs.sum(dim=-1), torch.ones(1), atol=1e-5)
 
 
 def test_expected_and_hard_grade() -> None:

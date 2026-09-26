@@ -1,0 +1,42 @@
+# Primary production config: APTOS 2019 + MobileNetV3-Small (edge target).
+# Train locally:  make train CFG=configs/train/aptos_mobilenetv3.yaml
+# Train on CI:    Actions -> "train" -> config=configs/train/aptos_mobilenetv3.yaml
+# Requires Kaggle credentials (KAGGLE_USERNAME / KAGGLE_KEY).
+data:
+  dataset: aptos
+  root: data/aptos
+  img_size: 224
+  batch_size: 32
+  num_workers: 8
+  clahe_prob: 0.5          # random CLAHE -> robust on-device (Android skips CLAHE)
+  ben_graham: true         # fundus crop + radius-300 rescale before augmentation
+  ben_graham_radius: 300
+  val_fraction: 0.15
+  test_fraction: 0.05
+  split_salt: aptos_v1
+
+model:
+  backbone: mobilenetv3_small_100
+  pretrained: true         # ImageNet weights via timm (auto-falls back if offline)
+  dropout: 0.2
+  num_grades: 5
+
+train:
+  epochs: 30
+  lr: 0.0008
+  weight_decay: 0.02
+  warmup_epochs: 2
+  grad_clip: 5.0
+  amp: true
+  ema: true
+  sampler: true            # class-balanced sampler (APTOS is heavily imbalanced)
+  patience: 6
+  seed: 42
+  save_dir: artifacts/aptos_mv3
+  loss:
+    ordinal_weight: 1.0
+    refer_weight: 0.3
+    focal_gamma: 2.0
+
+eval:
+  batch_size: 64

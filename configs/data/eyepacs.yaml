@@ -1,0 +1,18 @@
+# EyePACS (Kaggle DR Detection 2015) — large-scale, noisier labels (~35k train).
+# Kaggle competition: https://www.kaggle.com/c/diabetic-retinopathy-detection
+# Labels for the train split come from retinopathy_solution.csv shipped with the competition data.
+dataset: eyepacs
+root: data/eyepacs
+img_size: 224
+batch_size: 48
+num_workers: 8
+clahe_prob: 0.5
+
+eyepacs:
+  competition: diabetic-retinopathy-detection
+
+synthetic:
+  n_train: 240
+  n_val: 80
+  size: 64
+  seed: 0

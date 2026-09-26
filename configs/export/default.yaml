@@ -1,0 +1,14 @@
+# Export profile — canonical defaults for the retinaedge.export CLIs.
+# Precedence: CLI flags > this profile (via --export-config) > code defaults.
+# A train config may also carry its own `export:` block with the same keys.
+export:
+  opset: 17               # ONNX opset version
+  dynamic_batch: false    # dynamic batch dim in the ONNX graph (H/W stay fixed)
+  verify: true            # parity check vs torch via onnxruntime (atol below)
+  verify_atol: 1.0e-3
+  latency_runs: 30        # timed forward passes for the latency summary
+  warmup: 5
+  int8: false             # full-integer PTQ for TFLite (uint8 in/out)
+  representative_dir: null # folder of calibration images for int8 PTQ
+  representative_samples: 200
+  referable_threshold: 0.5 # P(grade>=2) above this -> refer suspected DR

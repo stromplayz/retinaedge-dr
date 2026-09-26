@@ -1,0 +1,20 @@
+# APTOS 2019 Blindness Detection — primary training dataset.
+# Kaggle competition: https://www.kaggle.com/c/aptos2019-blindness-detection
+# 3,662 labelled fundus images (train), 5 ICDRSS grades. Requires free Kaggle account.
+# Credentials: KAGGLE_USERNAME / KAGGLE_KEY env vars or ~/.kaggle/kaggle.json
+dataset: aptos
+root: data/aptos
+img_size: 224
+batch_size: 32
+num_workers: 8
+clahe_prob: 0.5            # random CLAHE -> model robust with and without on-device CLAHE
+
+aptos:
+  competition: aptos2019-blindness-detection
+
+# synthetic block kept for smoke overrides compatibility
+synthetic:
+  n_train: 240
+  n_val: 80
+  size: 64
+  seed: 0
