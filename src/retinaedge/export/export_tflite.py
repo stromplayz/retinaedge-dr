@@ -238,7 +238,10 @@ def export_onnx_to_tflite(
             pass
         flags = _onnx2tf_flags(onnx2tf_bin)
         mode = "fp32"
-        base_cmd = [onnx2tf_bin, "-i", str(onnx_path), "-o", str(outdir), "--non_verbose"]
+        # onnx2tf runs with cwd=tmpdir (calibration seed lookup) — the input ONNX
+        # path must be absolute or it "does not exist".
+        onnx_abs = str(Path(onnx_path).resolve())
+        base_cmd = [onnx2tf_bin, "-i", onnx_abs, "-o", str(outdir), "--non_verbose"]
         cmd = list(base_cmd)
 
         def _dyn_flag() -> str:
