@@ -2,8 +2,38 @@
   "target": 0.97,
   "budget": "small",
   "goal_reached": false,
-  "best": null,
-  "history": [],
-  "updated_at": "2026-09-26T23:59:00Z",
+  "best": {
+    "stage": "s2-longer-ema",
+    "variant": "soup+tta",
+    "acc_refer": 0.8437330439500814,
+    "qwk": 0.7706799725520153,
+    "sens_refer": 0.786346396965866,
+    "spec_refer": 0.8868821292775665,
+    "ci95_lo": 0.8264423018295268,
+    "ci95_hi": 0.8595938459661856,
+    "ckpt": "runs/s2-longer-ema/best.pt",
+    "n": 1843
+  },
+  "history": [
+    {
+      "stage": "s1-baseline",
+      "best_variant": "soup+tta",
+      "acc_refer": 0.8241996744438416,
+      "qwk": 0.7276135052576431,
+      "target_reached": false,
+      "elapsed_s": 701.4664349555969,
+      "ts": "2026-09-26T23:59:00Z"
+    },
+    {
+      "stage": "s2-longer-ema",
+      "best_variant": "soup+tta",
+      "acc_refer": 0.8437330439500814,
+      "qwk": 0.7706799725520153,
+      "target_reached": false,
+      "elapsed_s": 1309.0150876045227,
+      "ts": "2026-09-26T23:45:00Z"
+    }
+  ],
+  "updated_at": "2026-09-27T00:06:49Z",
   "note": "Campaign reset after local plumbing probe (runs/s1-baseline on a 600-image random-init slice was a loop verification, not a metrics run)."
 }
