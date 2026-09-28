@@ -3,15 +3,15 @@
   "budget": "small",
   "goal_reached": false,
   "best": {
-    "stage": "s2-longer-ema",
+    "stage": "s5-fusion",
     "variant": "soup+tta",
-    "acc_refer": 0.8437330439500814,
-    "qwk": 0.7706799725520153,
-    "sens_refer": 0.786346396965866,
-    "spec_refer": 0.8868821292775665,
-    "ci95_lo": 0.8264423018295268,
-    "ci95_hi": 0.8595938459661856,
-    "ckpt": "runs/s2-longer-ema/best.pt",
+    "acc_refer": 0.8903960933260987,
+    "qwk": 0.8450015472888784,
+    "sens_refer": 0.854614412136536,
+    "spec_refer": 0.9173003802281369,
+    "ci95_lo": 0.8753134658355374,
+    "ci95_hi": 0.9038546609821659,
+    "ckpt": "runs/s5-fusion/best.pt",
     "n": 1843
   },
   "history": [
@@ -32,8 +32,35 @@
       "target_reached": false,
       "elapsed_s": 1309.0150876045227,
       "ts": "2026-09-26T23:45:00Z"
+    },
+    {
+      "stage": "s3-sharper",
+      "best_variant": "soup",
+      "acc_refer": 0.8323385784047749,
+      "qwk": 0.7446173027110167,
+      "target_reached": false,
+      "elapsed_s": 631.2547235488892,
+      "ts": "2026-09-27T00:06:49Z"
+    },
+    {
+      "stage": "s4-backbone",
+      "best_variant": "soup+tta",
+      "acc_refer": 0.8545849158979925,
+      "qwk": 0.8064144243998157,
+      "target_reached": false,
+      "elapsed_s": 2606.5480048656464,
+      "ts": "2026-09-28T09:52:54Z"
+    },
+    {
+      "stage": "s5-fusion",
+      "best_variant": "soup+tta",
+      "acc_refer": 0.8903960933260987,
+      "qwk": 0.8450015472888784,
+      "target_reached": false,
+      "elapsed_s": 3451.473447084427,
+      "ts": "2026-09-28T10:36:20Z"
     }
   ],
-  "updated_at": "2026-09-27T00:06:49Z",
+  "updated_at": "2026-09-28T11:33:52Z",
   "note": "Campaign reset after local plumbing probe (runs/s1-baseline on a 600-image random-init slice was a loop verification, not a metrics run)."
 }
