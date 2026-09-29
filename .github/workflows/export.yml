@@ -77,6 +77,10 @@ jobs:
           if [ -z "$TRAIN_RUN_ID" ]; then
             TRAIN_RUN_ID=$(gh run list --workflow=train.yml --status=success --limit 1 \
               --json databaseId --jq 'if length>0 then .[0].databaseId else "" end')
+            if [ -z "$TRAIN_RUN_ID" ]; then
+              TRAIN_RUN_ID=$(gh run list --workflow=train-online.yml --status=success --limit 1 \
+                --json databaseId --jq 'if length>0 then .[0].databaseId else "" end')
+            fi
           fi
           if [ -z "$TRAIN_RUN_ID" ]; then
             echo "::error::No successful train.yml run found — run the Train (dispatch) workflow first, or pass train_run_id."
