@@ -1,4 +1,4 @@
-.PHONY: setup lint format test smoke train eval export-onnx bench demo clean
+.PHONY: setup lint format test smoke train eval export-onnx bench demo clean fetch-data probe-data distill quantize
 
 setup:
 	python3 -m pip install -e ".[dev]"
@@ -59,3 +59,20 @@ soup:
 pseudo:
 	python3 -m retinaedge.train.pseudo_label --config $(CFG) --ckpt $(CKPT) \
 	  --images-dir $(IMAGES_DIR) --out $(OUT) --tau $(TAU)
+
+# KGAT-token Kaggle fetch (bearer auth; see configs/data/kaggle_dr_catalog.yaml)
+fetch-data:
+	python3 -m retinaedge.data.kaggle_fetch --handle $(HANDLE) --out data/$(NAME)
+
+probe-data:
+	KAGGLE_API_TOKEN=$${KAGGLE_API_TOKEN:?set KAGGLE_API_TOKEN} \
+	python3 -m retinaedge.data.kaggle_fetch --handle $(HANDLE) --out /tmp/probe --max-bytes 1048576
+
+# Knowledge distillation: teacher checkpoint -> mobile student backbone
+distill:
+	python3 -m retinaedge.train.distill --config $(CFG) --teacher-ckpt $(CKPT) \
+	  --student-backbone $(BACKBONE) --out-dir artifacts/distill
+
+# ONNX int8 dynamic quantization + mobile-fit verdict
+quantize:
+	python3 -m retinaedge.export.quantize_onnx --onnx $(MODEL) --out $(OUT) --img-size $(SIZE)

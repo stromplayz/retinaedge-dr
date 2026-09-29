@@ -1,0 +1,54 @@
+# Validated Kaggle fundus / diabetic-retinopathy dataset catalog.
+# Every handle below was probed with the repo's KGAT bearer-token auth
+# (retinaedge.data.kaggle_fetch) and returned a valid dataset archive.
+# Sizes are archive bytes as reported by the Kaggle API (2026-09 survey).
+#
+# Use via:
+#   python -m retinaedge.data.kaggle_fetch --handle <handle> --out data/<name>
+# Priority order for maximum-accuracy training rounds (largest + most
+# grade-diverse first):
+datasets:
+  - handle: ascanipek/eyepacs-aptos-messidor-diabetic-retinopathy
+    bytes: 21994000000
+    approx_images: 88700
+    note: "EyePACS + APTOS + Messidor merged, resized 512px, 5-grade labels"
+    priority: 1
+
+  - handle: sehastrajits/fundus-aptosddridirdeyepacsmessidor
+    bytes: 10804000000
+    approx_images: 65000
+    note: "APTOS + DDR + IDIRD + EyePACS + Messidor 5-grade union"
+    priority: 2
+
+  - handle: mohlamin/resized-eyepacs-diabetic-retinopathy-dataset
+    bytes: 24126000000
+    approx_images: 88700
+    note: "EyePACS resized alternative; grade distribution skew 0"
+    priority: 3
+
+  - handle: mariaherrerot/aptos2019
+    bytes: 8603000000
+    approx_images: 3662
+    note: "APTOS-2019 original resolution (train + test w/ labels)"
+    priority: 4
+
+  - handle: sovitrath/diabetic-retinopathy-224x224-gaussian-filtered
+    bytes: 447582906
+    approx_images: 3662
+    note: "APTOS 224px Gaussian-filtered (CC0); fast CI calibration source"
+    priority: 5
+
+  - handle: mariaherrerot/messidor2preprocess
+    bytes: 399000000
+    approx_images: 1748
+    note: "Messidor-2 preprocessed; binary DR grading (map >=2 referable)"
+    priority: 6
+
+  - handle: google-brain/messidor2-dr-grades
+    bytes: 0
+    approx_images: 1748
+    note: "Google Brain DR-grade alignment labels for Messidor-2"
+    priority: 7
+
+# Environment: workflows export KAGGLE_API_TOKEN (repo secret, KGAT format).
+# Local: export KAGGLE_API_TOKEN=... or legacy KAGGLE_USERNAME/KAGGLE_KEY.

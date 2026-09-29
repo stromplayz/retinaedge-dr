@@ -124,11 +124,17 @@ python3 -m retinaedge.train.auto_improve --config configs/train/kaggle_blend.yam
   at runtime from the Hugging Face Hub — val **QWK 0.503**, referable-DR **AUC 0.846**, sensitivity
   **0.916** @ spec 0.638, calibrated ECE **0.088**; ONNX 6.11 MB, parity 1.8e-07. Details and honest
   caveats: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md), provenance in `provenance.json`.
-- ✅ CI green on `main` (lint + 92 tests + smoke pipeline on every push)
-- 🚧 int8 TFLite conversion for Android (export path wired; run "Export" with `int8=true`)
-- ✅ **97% campaign live**: Kaggle 4-source blend (18,383 imgs, patient-aware splits) + Messidor-2 external
-  set + continuous improvement workflow (`improve.yml`) with resumable escalation ladder
-- 🚧 Remaining: GPU rung s4/s5 (Kaggle/Colab), pseudo-label round on EyePACS, one-shot external proof
+- ✅ CI green on `main` (lint + **160 tests** + smoke pipeline on every push)
+- ✅ int8 TFLite conversion for Android (1.97 MB dynamic-range + 1.83 MB full-integer, CI-built)
+- ✅ **97% campaign live** and resumable: escalation ladder executed s1→s5 in GitHub Actions on the
+  18,383-image Kaggle blend (DDR+APTOS+Messidor-2+IDRiD, patient-aware splits). Current best
+  (`s5-fusion`, soup+tta): referable-DR accuracy **0.890** (Wilson 95% CI [0.875, 0.904], n=1843),
+  **QWK 0.845**, sens 0.855 @ spec 0.917 — progress log: `runs/improvement_log.md`.
+- ✅ **v0.2.0-mobile additions**: KGAT-token Kaggle fetcher + 7-dataset max-coverage catalog
+  (up to the 22 GB EyePACS+APTOS+Messidor union, ~88.7k imgs), knowledge distillation to
+  `mobilenetv3_small_050`, ONNX int8 dynamic quantization with drift gates + mobile-fit verdict
+- 🚧 Remaining gap to honest-97 (~8 pt): data maximalism rung (catalog priority 1–2), GPU rung,
+  distill round, pseudo-label round on EyePACS, external Messidor-2 proof
 
 ## License
 
