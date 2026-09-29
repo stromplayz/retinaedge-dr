@@ -68,8 +68,16 @@ class TestVariantMetrics:
         logits[np.arange(200), targets] += 1.8
         probs = _softmax(logits)
         m = variant_metrics(probs, targets)
-        assert set(m) >= {"qwk", "qwk_cuts", "accuracy", "accuracy_cuts",
-                          "acc_refer", "sens_refer", "spec_refer", "n"}
+        assert set(m) >= {
+            "qwk",
+            "qwk_cuts",
+            "accuracy",
+            "accuracy_cuts",
+            "acc_refer",
+            "sens_refer",
+            "spec_refer",
+            "n",
+        }
         assert 0.0 <= m["acc_refer"] <= 1.0
         assert m["n"] == 200
 

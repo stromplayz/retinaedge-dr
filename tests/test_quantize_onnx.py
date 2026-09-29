@@ -15,8 +15,14 @@ from retinaedge.models.build import build_model
 onnx = pytest.importorskip("onnx")
 ort = pytest.importorskip("onnxruntime")
 
-CFG = {"model": {"backbone": "mobilenetv3_small_050", "pretrained": False,
-                 "dropout": 0.0, "num_grades": 5}}
+CFG = {
+    "model": {
+        "backbone": "mobilenetv3_small_050",
+        "pretrained": False,
+        "dropout": 0.0,
+        "num_grades": 5,
+    }
+}
 
 
 @pytest.fixture(scope="module")

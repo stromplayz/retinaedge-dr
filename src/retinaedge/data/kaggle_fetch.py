@@ -44,15 +44,18 @@ def kaggle_auth_headers() -> dict[str, str]:
         b64 = base64.b64encode(f"{user}:{key}".encode()).decode()
         return {"Authorization": f"Basic {b64}"}
     raise RuntimeError(
-        "Kaggle credentials missing: set KAGGLE_API_TOKEN (KGAT_…) or "
-        "KAGGLE_USERNAME/KAGGLE_KEY"
+        "Kaggle credentials missing: set KAGGLE_API_TOKEN (KGAT_…) or KAGGLE_USERNAME/KAGGLE_KEY"
     )
 
 
 def dataset_info(handle: str) -> dict[str, Any]:
     """Fetch dataset metadata (title, size, license) for provenance."""
-    r = requests.get(f"{_API}/datasets/list", params={"search": handle},
-                     headers=kaggle_auth_headers(), timeout=30)
+    r = requests.get(
+        f"{_API}/datasets/list",
+        params={"search": handle},
+        headers=kaggle_auth_headers(),
+        timeout=30,
+    )
     r.raise_for_status()
     owner, slug = handle.split("/")
     for d in r.json():
@@ -91,8 +94,9 @@ def download_dataset(
     headers = kaggle_auth_headers()
 
     if max_bytes is not None:
-        with requests.get(url, headers=headers, stream=True, timeout=120,
-                          params={"maxSize": None}) as r:
+        with requests.get(
+            url, headers=headers, stream=True, timeout=120, params={"maxSize": None}
+        ) as r:
             r.raise_for_status()
             head = b""
             for chunk in r.iter_content(chunk_size=1 << 20):
@@ -128,8 +132,13 @@ def download_dataset(
 
     n_files = sum(1 for p in extract_dir.rglob("*") if p.is_file())
     size = sum(p.stat().st_size for p in extract_dir.rglob("*") if p.is_file())
-    info = {"handle": handle, "out_dir": str(extract_dir), "files": n_files,
-            "bytes": size, "mode": "full"}
+    info = {
+        "handle": handle,
+        "out_dir": str(extract_dir),
+        "files": n_files,
+        "bytes": size,
+        "mode": "full",
+    }
     (extract_dir / "kaggle_provenance.json").write_text(
         json.dumps({**info, **dataset_info(handle)}, indent=2), encoding="utf-8"
     )
@@ -140,13 +149,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Download a Kaggle dataset (KGAT token auth)")
     parser.add_argument("--handle", required=True, help="owner/slug Kaggle dataset reference")
     parser.add_argument("--out", required=True)
-    parser.add_argument("--max-bytes", type=int, default=None,
-                        help="probe mode: fetch only the first N bytes")
+    parser.add_argument(
+        "--max-bytes", type=int, default=None, help="probe mode: fetch only the first N bytes"
+    )
     parser.add_argument("--keep-zip", action="store_true")
     args, _unknown = parser.parse_known_args(argv)
 
-    result = download_dataset(args.handle, args.out, max_bytes=args.max_bytes,
-                              keep_zip=args.keep_zip)
+    result = download_dataset(
+        args.handle, args.out, max_bytes=args.max_bytes, keep_zip=args.keep_zip
+    )
     print(json.dumps(result, indent=2))
     if result.get("mode") == "probe" and not result.get("zip_magic_valid"):
         return 1

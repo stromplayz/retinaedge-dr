@@ -95,8 +95,8 @@ def quantize_onnx_dynamic(
         report["latency_ms_fp32_p50"] = float(np.percentile(t_fp32, 50) * 1000)
         report["latency_ms_int8_p50"] = float(np.percentile(t_int8, 50) * 1000)
         report["latency_ms_int8_p95"] = float(np.percentile(t_int8, 95) * 1000)
-        report["speedup_p50"] = (
-            report["latency_ms_fp32_p50"] / max(1e-9, report["latency_ms_int8_p50"])
+        report["speedup_p50"] = report["latency_ms_fp32_p50"] / max(
+            1e-9, report["latency_ms_int8_p50"]
         )
     return report
 
@@ -138,7 +138,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     fit = mobile_fit_report(report["int8_bytes"], report.get("latency_ms_int8_p50"))
     payload = {"quantization": report, "mobile_fit": fit}
-    out_json = Path(args.report_out) if args.report_out else Path(args.out).with_suffix(".quant.json")
+    out_json = (
+        Path(args.report_out) if args.report_out else Path(args.out).with_suffix(".quant.json")
+    )
     out_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload, indent=2))
     return 0

@@ -177,8 +177,11 @@ def distill_train(
                 t_logits = t_out["ordinal_logits"] / teacher_t
             s_out = student(imgs)
             loss, parts = distillation_loss(
-                s_out["ordinal_logits"], t_logits, targets,
-                alpha=alpha, kd_temp=kd_temp,
+                s_out["ordinal_logits"],
+                t_logits,
+                targets,
+                alpha=alpha,
+                kd_temp=kd_temp,
             )
             opt.zero_grad(set_to_none=True)
             loss.backward()

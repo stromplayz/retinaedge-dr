@@ -19,8 +19,12 @@ pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
 def small_cfg() -> dict:
     return {
         "data": {"img_size": 64},
-        "model": {"backbone": "mobilenetv3_small_050", "pretrained": False,
-                  "dropout": 0.0, "num_grades": 5},
+        "model": {
+            "backbone": "mobilenetv3_small_050",
+            "pretrained": False,
+            "dropout": 0.0,
+            "num_grades": 5,
+        },
     }
 
 
@@ -71,13 +75,20 @@ class TestTTA:
 class TestSoup:
     def test_average_state_dicts_shapes(self, ckpt_pair):
         sd = average_state_dicts(ckpt_pair)
-        ref = build_model({"model": {"backbone": "mobilenetv3_small_050",
-                                     "pretrained": False}})
+        ref = build_model({"model": {"backbone": "mobilenetv3_small_050", "pretrained": False}})
         assert set(sd) == set(ref.state_dict())
 
     def test_mismatched_keys_rejected(self, ckpt_pair, tmp_path):
-        torch.save({"state_dict": {"bogus": torch.zeros(1)}, "cfg": {},
-                    "temperature": 1.0, "epoch": 0, "val_qwk": 0.0}, tmp_path / "bad.pt")
+        torch.save(
+            {
+                "state_dict": {"bogus": torch.zeros(1)},
+                "cfg": {},
+                "temperature": 1.0,
+                "epoch": 0,
+                "val_qwk": 0.0,
+            },
+            tmp_path / "bad.pt",
+        )
         with pytest.raises(ValueError):
             average_state_dicts([ckpt_pair[0], tmp_path / "bad.pt"])
 
