@@ -100,6 +100,9 @@ python3 -m retinaedge.train.auto_improve --config configs/train/kaggle_blend.yam
 
 ## Web playground (test every released model in your browser)
 
+**Live: https://stromplayz.github.io/retinaedge-dr-playground/** (public mirror
+repo; Pages requires a public repo on the free plan).
+
 `site/` is a self-contained static playground: pick any released model from the
 registry (`site/models/manifest.json`), drop a fundus image, and get ICDRSS grade
 probabilities, the expected grade E[Y], the referable-DR verdict and per-model

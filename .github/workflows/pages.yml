@@ -14,12 +14,10 @@ name: Deploy playground (Pages)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "site/**"
-      - "scripts/build_site_manifest.py"
-      - ".github/workflows/pages.yml"
+  # NOTE: push trigger intentionally omitted — GitHub Pages on a private repo
+  # needs a paid plan, so scheduled deploys would fail with a red X. Run this
+  # workflow manually once Pages is available (plan upgrade or public mirror
+  # repo), or serve site/ from any static host.
 
 permissions:
   contents: read
@@ -47,13 +45,14 @@ jobs:
           set -euo pipefail
           mkdir -p site/_assets site/models artifacts/release artifacts/online
           gh release download -R "$GITHUB_REPOSITORY" \
-            -p '*.onnx' \
+            -p 'dr_s5fusion_*.onnx' \
+            -p 'pilot_model.onnx' -p 'pilot_metrics.json' -p 'pilot_eval.json' \
             -p 's5fusion_metrics.json' -p 'improve_state.json' \
-            -p 'eval.json' -p 'metrics.json' \
             -D site/_assets --clobber
-          mv site/_assets/*.onnx site/models/
-          mv site/_assets/s5fusion_metrics.json site/_assets/improve_state.json artifacts/release/ || true
-          mv site/_assets/eval.json site/_assets/metrics.json artifacts/online/ || true
+          mv site/_assets/dr_s5fusion_*.onnx site/models/
+          mv site/_assets/pilot_model.onnx site/models/model.onnx
+          mv site/_assets/pilot_metrics.json site/_assets/pilot_eval.json artifacts/online/
+          mv site/_assets/s5fusion_metrics.json site/_assets/improve_state.json artifacts/release/
           rm -rf site/_assets
           ls -la site/models
 
