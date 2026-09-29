@@ -240,12 +240,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--alpha", type=float, default=0.7)
     parser.add_argument("--kd-temp", type=float, default=3.0)
     parser.add_argument("--lr", type=float, default=None)
-    args, _unknown = parser.parse_known_args(argv)
+    args, overrides = parser.parse_known_args(argv)
 
-    import yaml
+    # Dotted overrides (e.g. data.img_size=224 train.ema=true) — same mechanism
+    # as the trainer CLI, which is what the auto_improve ladder passes through.
+    from retinaedge.utils.config import load_config
 
-    with open(args.config, encoding="utf-8") as fh:
-        cfg = yaml.safe_load(fh)
+    cfg = load_config(args.config, overrides)
 
     student_cfg = {"backbone": args.student_backbone} if args.student_backbone else None
     report = distill_train(

@@ -1,0 +1,76 @@
+# GitHub Pages deploy for the RetinaEdge-DR model playground.
+#
+# The ONNX weights are NOT stored in git (repo stays lean). At deploy time this
+# workflow downloads them from the latest GitHub release assets, rebuilds
+# site/models/manifest.json via scripts/build_site_manifest.py, and publishes
+# the whole site/ directory with the official Pages actions.
+#
+# NOTE: GitHub Pages on a PRIVATE repository requires a paid plan (Pro/Team).
+# On free plans either make the repo public or serve site/ from any static
+# host (e.g. `python -m http.server -d site` locally) — the site is fully
+# self-contained and does all inference client-side.
+
+name: Deploy playground (Pages)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/build_site_manifest.py"
+      - ".github/workflows/pages.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download model weights + metrics from latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p site/_assets site/models artifacts/release artifacts/online
+          gh release download -R "$GITHUB_REPOSITORY" \
+            -p '*.onnx' \
+            -p 's5fusion_metrics.json' -p 'improve_state.json' \
+            -p 'eval.json' -p 'metrics.json' \
+            -D site/_assets --clobber
+          mv site/_assets/*.onnx site/models/
+          mv site/_assets/s5fusion_metrics.json site/_assets/improve_state.json artifacts/release/ || true
+          mv site/_assets/eval.json site/_assets/metrics.json artifacts/online/ || true
+          rm -rf site/_assets
+          ls -la site/models
+
+      - name: Build model registry manifest
+        run: python scripts/build_site_manifest.py --models-dir site/models --out site/models/manifest.json --strict
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

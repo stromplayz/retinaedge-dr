@@ -27,6 +27,8 @@ class DrLoss(nn.Module):
         ordinal_weight: Weight of the cumulative-task BCE term.
         refer_weight: Weight of the auxiliary referable-DR BCE term.
         focal_gamma: Focal exponent for the ordinal BCE (0 disables focal).
+        label_smoothing: BCE label smoothing in ``[0, 1)`` applied to both
+            heads (0 disables). Pairs with mixup for the v0.3.0 recipe.
     """
 
     def __init__(
@@ -34,13 +36,17 @@ class DrLoss(nn.Module):
         ordinal_weight: float = 1.0,
         refer_weight: float = 0.3,
         focal_gamma: float = 0.0,
+        label_smoothing: float = 0.0,
     ) -> None:
         super().__init__()
         if ordinal_weight < 0.0 or refer_weight < 0.0 or focal_gamma < 0.0:
             raise ValueError("loss weights and focal_gamma must be non-negative")
+        if not 0.0 <= float(label_smoothing) < 1.0:
+            raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing}")
         self.ordinal_weight = float(ordinal_weight)
         self.refer_weight = float(refer_weight)
         self.focal_gamma = float(focal_gamma)
+        self.label_smoothing = float(label_smoothing)
 
     def _ordinal_bce(self, ordinal_logits: Tensor, targets: Tensor) -> Tensor:
         """BCE (optionally focal) over all cumulative tasks, mean over batch+tasks."""
@@ -48,6 +54,10 @@ class DrLoss(nn.Module):
         # Binary label for task j ("grade > j") is targets >= j + 1.
         task_ids = torch.arange(num_tasks, device=ordinal_logits.device)
         labels = (targets.unsqueeze(-1) > task_ids).to(ordinal_logits.dtype)
+        if self.label_smoothing > 0.0:
+            # Binary label smoothing: y -> y*(1-ls) + ls/2. Applied manually —
+            # torch >= 2.14 removed the BCE-with-logits label_smoothing kwarg.
+            labels = labels * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
         bce = F.binary_cross_entropy_with_logits(ordinal_logits, labels, reduction="none")
         if self.focal_gamma > 0.0:
             probs = torch.sigmoid(ordinal_logits)
@@ -58,8 +68,12 @@ class DrLoss(nn.Module):
     def _refer_bce(self, refer_logits: Tensor, targets: Tensor) -> Tensor:
         """BCE on the auxiliary referable head (``grade >= 2``)."""
         labels = (targets >= 2).to(refer_logits.dtype)
+        if self.label_smoothing > 0.0:
+            labels = labels * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
         return F.binary_cross_entropy_with_logits(
-            refer_logits.squeeze(-1), labels, reduction="mean"
+            refer_logits.squeeze(-1),
+            labels,
+            reduction="mean",
         )
 
     def forward(self, outputs: dict, targets: Tensor) -> tuple[Tensor, dict[str, float]]:
@@ -100,11 +114,12 @@ def build_loss(cfg: dict) -> DrLoss:
     """Build :class:`DrLoss` from ``cfg["train"]["loss"]``.
 
     Supported keys with defaults: ``ordinal_weight=1.0``, ``refer_weight=0.3``,
-    ``focal_gamma=0.0``.
+    ``focal_gamma=0.0``, ``label_smoothing=0.0``.
     """
     loss_cfg: dict = cfg.get("train", {}).get("loss", {})
     return DrLoss(
         ordinal_weight=float(loss_cfg.get("ordinal_weight", 1.0)),
         refer_weight=float(loss_cfg.get("refer_weight", 0.3)),
         focal_gamma=float(loss_cfg.get("focal_gamma", 0.0)),
+        label_smoothing=float(loss_cfg.get("label_smoothing", 0.0)),
     )

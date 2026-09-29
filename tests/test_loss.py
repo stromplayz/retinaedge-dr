@@ -105,3 +105,26 @@ def test_build_loss_from_config() -> None:
     assert loss_fn.focal_gamma == 1.5
     defaults = build_loss({})
     assert defaults.ordinal_weight == 1.0 and defaults.refer_weight == 0.3
+
+
+def test_label_smoothing_changes_bce() -> None:
+    torch.manual_seed(0)
+    targets = torch.randint(0, 5, (8,))
+    out = _outputs(targets, offset=1.0)  # imperfect logits so BCE > 0
+    clean, _ = DrLoss(label_smoothing=0.0)(out, targets)
+    smooth, _ = DrLoss(label_smoothing=0.05)(out, targets)
+    assert torch.isfinite(smooth)
+    assert not torch.isclose(clean, smooth)
+
+
+def test_label_smoothing_validation() -> None:
+    with pytest.raises(ValueError):
+        DrLoss(label_smoothing=1.0)
+    with pytest.raises(ValueError):
+        DrLoss(label_smoothing=-0.1)
+
+
+def test_build_loss_label_smoothing_from_config() -> None:
+    cfg = {"train": {"loss": {"label_smoothing": 0.05}}}
+    assert build_loss(cfg).label_smoothing == pytest.approx(0.05)
+    assert build_loss({}).label_smoothing == 0.0

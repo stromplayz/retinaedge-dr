@@ -64,6 +64,7 @@ class Stage:
     name: str
     description: str
     overrides: tuple[str, ...]  # dotted overrides with {e1}/{e2}/{sz}/{sz2} placeholders
+    runner: str = "trainer"  # "trainer" or "distill"
 
     def resolved(self, params: dict[str, float]) -> tuple[str, ...]:
         """Substitute budget placeholders into the overrides."""
@@ -106,6 +107,31 @@ def build_ladder(budget: str) -> list[Stage]:
                 "train.ema=true",
                 "train.patience=6",
             ),
+        ),
+        Stage(
+            "s6-mixup",
+            "mixup alpha=0.2 + label smoothing at escalated resolution (v0.3.0)",
+            (
+                "model.backbone=efficientnet_lite0",
+                "data.img_size={sz2}",
+                "train.epochs={e2}",
+                "train.ema=true",
+                "train.patience=6",
+                "train.mixup_alpha=0.2",
+                "train.loss.label_smoothing=0.05",
+            ),
+        ),
+        Stage(
+            "s7-distill",
+            "self-distillation from the best soup teacher, T=3 (v0.3.0)",
+            (
+                "model.backbone=efficientnet_lite0",
+                "data.img_size={sz2}",
+                "train.epochs={e2}",
+                "train.ema=true",
+                "train.patience=6",
+            ),
+            runner="distill",
         ),
     ]
 
@@ -311,6 +337,44 @@ def _run_trainer_subprocess(config: str, overrides: Sequence[str], run_dir: Path
         raise RuntimeError(f"trainer failed ({config} {' '.join(overrides)}):\n{tail}")
 
 
+def _run_distill_subprocess(
+    config: str, overrides: Sequence[str], run_dir: Path, teacher_ckpt: str | None
+) -> None:
+    """Run one distillation stage (teacher -> student) as a subprocess.
+
+    ``distill.py`` saves ``student_best.pt``; it is renamed to ``best.pt`` so
+    :func:`evaluate_variants` can treat the run exactly like a trainer run.
+    """
+    run_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable,
+        "-m",
+        "retinaedge.train.distill",
+        "--config",
+        config,
+        "--teacher-ckpt",
+        str(teacher_ckpt),
+        "--out-dir",
+        run_dir.as_posix(),
+        "--kd-temp",
+        "3.0",
+        "--alpha",
+        "0.7",
+        *overrides,
+    ]
+    log_path = run_dir / "train.log"
+    with open(log_path, "w", encoding="utf-8") as log:
+        proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT)  # noqa: S603
+    if proc.returncode != 0:
+        tail = log_path.read_text(encoding="utf-8", errors="replace")[-1500:]
+        raise RuntimeError(f"distill failed ({config} {' '.join(overrides)}):\n{tail}")
+    student = run_dir / "student_best.pt"
+    if student.exists():
+        student.replace(run_dir / "best.pt")
+    else:
+        raise RuntimeError(f"distill produced no student_best.pt in {run_dir}")
+
+
 def _fmt_log_entry(
     stage_name: str,
     description: str,
@@ -408,7 +472,20 @@ def run_campaign(
             "=== stage %s: %s (%s) ===", stage.name, stage.description, " ".join(overrides)
         )
         t0 = time.time()
-        _run_trainer_subprocess(config, overrides, run_dir)
+        teacher = (state.get("best") or {}).get("ckpt")
+        if stage.runner == "distill" and (not teacher or not Path(teacher).exists()):
+            _LOGGER.warning(
+                "stage %s requests the distill runner but teacher ckpt %s is missing — "
+                "falling back to the trainer (fresh CI runners do not keep .pt files; "
+                "restore runs/*.pt from the previous improve-run artifact to enable distill)",
+                stage.name,
+                teacher,
+            )
+            _run_trainer_subprocess(config, overrides, run_dir)
+        elif stage.runner == "distill":
+            _run_distill_subprocess(config, overrides, run_dir, teacher)
+        else:
+            _run_trainer_subprocess(config, overrides, run_dir)
         cfg = _load_cfg(config, overrides)
         variants = evaluate_variants(cfg, run_dir, device)
         best_name, best = pick_best_variant(variants)

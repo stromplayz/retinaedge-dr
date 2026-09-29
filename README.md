@@ -98,6 +98,25 @@ python3 -m retinaedge.train.auto_improve --config configs/train/kaggle_blend.yam
 # or: make improve CFG=configs/train/kaggle_blend.yaml BUDGET=small
 ```
 
+## Web playground (test every released model in your browser)
+
+`site/` is a self-contained static playground: pick any released model from the
+registry (`site/models/manifest.json`), drop a fundus image, and get ICDRSS grade
+probabilities, the expected grade E[Y], the referable-DR verdict and per-model
+latency — all client-side via ONNX Runtime Web (WASM). Nothing is uploaded
+anywhere. The ONNX weights are pulled from the GitHub release assets at deploy
+time by `.github/workflows/pages.yml`, which also regenerates the manifest with
+`scripts/build_site_manifest.py`; INT8 entries prefer the `*.qdq.onnx` variants
+produced by `scripts/quantize_web_qdq.py` because the WASM EP lacks the
+ConvInteger kernel that dynamic int8 exports emit. Local preview:
+
+```bash
+python3 -m http.server 8080 -d site   # open http://localhost:8080
+```
+
+> NOTE: GitHub Pages on a private repo requires a paid plan; otherwise serve
+> `site/` from any static host — inference never leaves the browser.
+
 ## Documentation index
 
 | Doc | Contents |

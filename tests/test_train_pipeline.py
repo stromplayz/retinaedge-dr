@@ -117,3 +117,19 @@ def test_checkpoint_roundtrip_into_fresh_model(tmp_path: Path) -> None:
     probs = model.predict_probs(imgs)
     assert probs.shape == (1, 5)
     assert torch.allclose(probs.sum(dim=-1), torch.ones(1), atol=1e-5)
+
+
+def test_mixup_epoch_runs(tmp_path: Path) -> None:
+    """v0.3.0: one epoch with mixup + label smoothing must train and save."""
+    save_dir = tmp_path / "run_mixup"
+    args = [
+        "--config",
+        "configs/train/smoke.yaml",
+        f"train.save_dir={save_dir}",
+        *_OVERRIDES,
+        "train.mixup_alpha=0.3",
+        "train.loss.label_smoothing=0.05",
+    ]
+    assert trainer_main(args) == 0
+    payload = load_checkpoint(save_dir / "best.pt")
+    assert isinstance(payload["val_qwk"], float)

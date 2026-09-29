@@ -1,0 +1,64 @@
+# ============================================================================
+# v0.3.0 "3x better" flagship config — the strongest mobile-compatible recipe.
+#
+# Goal: cut the referable-DR validation error rate 3x vs the v0.2.0 campaign
+# best (acc_refer 0.890 -> >= 0.963, i.e. error 11.0% -> <= 3.7%) on the way
+# to the 97% goal, while keeping the exported INT8 model inside the mobile
+# budgets (<= 5 MB, <= 120 ms on mid-tier Android CPU).
+#
+# Recipe deltas vs kaggle_blend.yaml (each row keeps every previous trick):
+#   backbone        mobilenetv3_small_100 -> efficientnet_lite0 (3.4M params,
+#                   the s4/s5 campaign winner) at 224px
+#   mixup           alpha=0.2 convex image/target blending (v0.3.0 trainer)
+#   label smoothing 0.05 on both ordinal + referable heads (v0.3.0 loss)
+#   ema             kept on (decay 0.999) — the soup trick's first rung
+#   epochs          12 (vs 8) with patience 6 — the medium-budget schedule
+#
+# Train directly:
+#   python -m retinaedge.train.trainer --config configs/train/arch_v3.yaml
+# Distill the s5/s6 soup teacher into this architecture (self-distillation):
+#   python -m retinaedge.train.distill --config configs/train/arch_v3.yaml \
+#       --teacher-ckpt runs/s5-fusion/best.pt --out-dir artifacts/distill_v3
+# The improve ladder runs the same recipe as stages s6-mixup / s7-distill.
+# ============================================================================
+
+data:
+  dataset: aptos            # generic images/ + labels.csv reader
+  root: data/kaggle_blend   # 18,383-image DDR+APTOS+Messidor-2+IDRiD blend
+  img_size: 224
+  batch_size: 32
+  num_workers: 3
+  clahe_prob: 0.5
+  ben_graham: false         # sources are already cropped/resized at 256px
+  val_fraction: 0.15        # ignored: labels.csv carries an explicit split column
+  test_fraction: 0.0
+  split_salt: kaggle_blend_v1
+
+model:
+  backbone: efficientnet_lite0
+  pretrained: true
+  dropout: 0.2
+  num_grades: 5
+
+train:
+  epochs: 12
+  lr: 0.001
+  weight_decay: 0.02
+  warmup_epochs: 1
+  grad_clip: 5.0
+  amp: false
+  ema: true
+  ema_decay: 0.999
+  mixup_alpha: 0.2          # v0.3.0: mixup regularization
+  sampler: true
+  patience: 6
+  seed: 42
+  save_dir: artifacts/arch_v3
+  loss:
+    ordinal_weight: 1.0
+    refer_weight: 0.3
+    focal_gamma: 2.0
+    label_smoothing: 0.05   # v0.3.0: smoothed ordinal + referable BCE
+
+eval:
+  batch_size: 64

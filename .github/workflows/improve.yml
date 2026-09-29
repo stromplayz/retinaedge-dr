@@ -27,7 +27,7 @@ on:
         default: "0.97"
       max_stages:
         description: "Max ladder stages per invocation"
-        default: "5"
+        default: "7"
       config:
         description: "Training config (blank = auto: kaggle->kaggle_blend, hf->online_pilot)"
         default: ""
@@ -68,7 +68,7 @@ jobs:
     env:
       INPUTS_BUDGET: ${{ inputs.budget || 'small' }}
       INPUTS_TARGET: ${{ inputs.target || '0.97' }}
-      INPUTS_MAX_STAGES: ${{ inputs.max_stages || '5' }}
+      INPUTS_MAX_STAGES: ${{ inputs.max_stages || '7' }}
       INPUTS_CONFIG: ${{ inputs.config || '' }}
       INPUTS_MODE: ${{ inputs.dataset_mode || 'kaggle' }}
       INPUTS_KAGGLE: ${{ inputs.kaggle_dataset || 'jin0507/ddr-aptos-2019-idrid-and-messidor-2-256-x-256' }}

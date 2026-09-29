@@ -428,6 +428,9 @@ def train(cfg: dict, device: str = "auto") -> dict:
         _LOGGER.info("EMA enabled (decay=%.4f)", ema.decay)
 
     tracker = QWKTracker(num_grades=int(cfg.get("model", {}).get("num_grades", 5)))
+    mixup_alpha = float(train_cfg.get("mixup_alpha", 0.0))
+    if mixup_alpha > 0.0:
+        _LOGGER.info("mixup enabled (alpha=%.2f)", mixup_alpha)
     history: list[dict[str, Any]] = []
     best_qwk = -math.inf
     best_epoch = -1
@@ -447,10 +450,25 @@ def train(cfg: dict, device: str = "auto") -> dict:
                 imgs.to(device, non_blocking=True),
                 targets.to(device, non_blocking=True),
             )
+            targets_perm: torch.Tensor | None = None
+            lam = 1.0
+            if mixup_alpha > 0.0 and imgs.size(0) > 1:
+                # Mixup (Zhang et al., 2018): convex blend of images + paired
+                # targets; the loss becomes lam*L(a) + (1-lam)*L(perm).
+                lam = float(torch.distributions.Beta(mixup_alpha, mixup_alpha).sample())
+                perm = torch.randperm(imgs.size(0), device=imgs.device)
+                imgs = lam * imgs + (1.0 - lam) * imgs[perm]
+                targets_perm = targets[perm]
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device, dtype=amp_dtype, enabled=use_amp):
                 outputs = model(imgs)
-                loss, parts = loss_fn(outputs, targets)
+                if targets_perm is not None:
+                    loss_a, parts_a = loss_fn(outputs, targets)
+                    loss_b, parts_b = loss_fn(outputs, targets_perm)
+                    loss = lam * loss_a + (1.0 - lam) * loss_b
+                    parts = {k: lam * parts_a[k] + (1.0 - lam) * parts_b[k] for k in parts_a}
+                else:
+                    loss, parts = loss_fn(outputs, targets)
             scaler.scale(loss).backward()
             if grad_clip > 0.0:
                 scaler.unscale_(optimizer)

@@ -91,3 +91,34 @@ class TestVariantMetrics:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestLadderV3:
+    """v0.3.0: s6-mixup + s7-distill rungs."""
+
+    def test_ladder_ends_with_v3_stages(self):
+        ladder = build_ladder("small")
+        names = [s.name for s in ladder]
+        assert names[-2:] == ["s6-mixup", "s7-distill"]
+
+    def test_distill_runner_flag(self):
+        ladder = build_ladder("medium")
+        assert all(s.runner == "trainer" for s in ladder[:-1])
+        assert ladder[-1].runner == "distill"
+
+    def test_v3_stages_resolve_placeholders(self):
+        ladder = build_ladder("full")
+        s6, s7 = ladder[-2], ladder[-1]
+        r6 = s6.resolved({"e2": 40, "sz2": 320})
+        r7 = s7.resolved({"e2": 40, "sz2": 320})
+        assert "train.mixup_alpha=0.2" in r6
+        assert "train.loss.label_smoothing=0.05" in r6
+        assert "data.img_size=320" in r7
+        assert "model.backbone=efficientnet_lite0" in r7
+
+    def test_every_stage_keeps_prior_tricks(self):
+        """Each rung must keep the escalation tricks (EMA, backbone, resolution)."""
+        ladder = build_ladder("medium")
+        for stage in ladder[1:]:
+            resolved = stage.resolved({"e1": 6, "e2": 14, "sz": 224, "sz2": 288})
+            assert "train.ema=true" in resolved, stage.name

@@ -281,7 +281,7 @@ def test_build_ladder_budgets_and_monotonic_escalation() -> None:
     for budget in ("small", "medium", "full"):
         ladder = build_ladder(budget)
         assert [s.name for s in ladder][0] == "s1-baseline"
-        assert len(ladder) == 5
+        assert len(ladder) == 7  # s1-s5 + v0.3.0 s6-mixup, s7-distill
     small = build_ladder("small")[1].resolved({"e1": 2, "e2": 4, "sz": 192, "sz2": 224})
     full = build_ladder("full")[1].resolved({"e1": 20, "e2": 40, "sz": 256, "sz2": 320})
     assert "train.epochs=4" in small

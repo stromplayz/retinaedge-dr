@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RetinaEdge-DR · Model Playground</title>
+<meta name="description" content="Test every RetinaEdge-DR diabetic-retinopathy model in your browser — ONNX Runtime Web, no uploads leave your device." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128065;</text></svg>" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">&#9678;</span>
+    <div>
+      <h1>RetinaEdge<span>-DR</span></h1>
+      <p class="tagline">Mobile-edge diabetic-retinopathy detection · in-browser model playground</p>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab is-active" role="tab" aria-selected="true" data-tab="test">Live Test</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="models">Model Registry</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="arch">Architecture</button>
+    <a class="tab tab-link" href="https://github.com/stromplayz/retinaedge-dr" target="_blank" rel="noopener">GitHub &#8599;</a>
+  </nav>
+</header>
+
+<main>
+  <!-- ============================ LIVE TEST ============================ -->
+  <section id="panel-test" class="panel is-active" role="tabpanel" aria-label="Live test">
+    <div class="test-grid">
+
+      <div class="card drop-card">
+        <h2>1 · Fundus image</h2>
+        <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Upload a fundus image">
+          <img id="preview" class="preview hidden" alt="Uploaded fundus image preview" />
+          <div id="drop-hint" class="drop-hint">
+            <span class="drop-icon" aria-hidden="true">&#8942;&#8599;</span>
+            <p><strong>Drop a fundus image</strong> or click to browse</p>
+            <p class="muted">JPG / PNG · processed 100% locally — nothing is uploaded</p>
+          </div>
+        </div>
+        <input id="file-input" type="file" accept="image/*" class="sr-only" />
+        <p id="preproc-note" class="muted small"></p>
+      </div>
+
+      <div class="card">
+        <h2>2 · Pick models</h2>
+        <p class="muted small">Every model runs on your device via ONNX Runtime Web (WASM).</p>
+        <div id="model-list" class="model-list" role="group" aria-label="Model selection"></div>
+        <div class="actions">
+          <button id="run-btn" class="btn primary" disabled>Run inference</button>
+          <button id="clear-btn" class="btn ghost">Clear</button>
+        </div>
+        <p id="status" class="status muted small" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="card results-card">
+        <h2>3 · Results</h2>
+        <div id="results" class="results">
+          <p class="muted">Upload an image and run one or more models to see grade probabilities, the expected ICDRSS grade, and the referable-DR alert here.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ========================== MODEL REGISTRY ========================= -->
+  <section id="panel-models" class="panel" role="tabpanel" aria-label="Model registry" hidden>
+    <div class="card">
+      <h2>Model registry</h2>
+      <p class="muted">All released checkpoints, exported to ONNX against the fixed contract <code>(1,3,H,W) float32 &rarr; (1,5) probabilities</code>. INT8 entries are post-training-quantized (parity-gated, max drift &lt; 0.004 on probability outputs).</p>
+      <div class="table-wrap"><table id="registry-table">
+        <thead><tr>
+          <th>Model</th><th>Stage</th><th>Quant</th><th>Size</th><th>Val QWK</th><th>AUC refer</th><th>Campaign acc&#8322;</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="muted small">&#8322; campaign accuracy = referable-DR accuracy of the best variant (soup + TTA + cut-point decoding) on the held-out validation split — see <code>runs/improvement_log.md</code> in the repo.</p>
+    </div>
+  </section>
+
+  <!-- =========================== ARCHITECTURE ========================== -->
+  <section id="panel-arch" class="panel" role="tabpanel" aria-label="Architecture" hidden>
+    <div class="arch-grid">
+      <div class="card">
+        <h2>The accuracy ladder</h2>
+        <p class="muted">A resumable escalation campaign runs inside GitHub Actions. Each rung keeps every previous trick and adds one; state is committed back so every scheduled run continues where the last stopped.</p>
+        <ol id="ladder" class="ladder"></ol>
+      </div>
+      <div class="card">
+        <h2>v0.3.0 — the 3&times; goal</h2>
+        <p>Current campaign best: <strong id="arch-best"></strong>. Version 0.3.0 targets a <strong>3&times; reduction of the validation error rate</strong> — cutting referable-DR error from ~11% to &le;3.7% (accuracy &ge;&nbsp;96.3%) on the way to the 97% goal.</p>
+        <ul class="arch-list">
+          <li><strong>s6-mixup</strong> — mixup (&alpha;&nbsp;=&nbsp;0.2) + label smoothing on top of the full s5 stack: stronger regularization at the escalated resolution.</li>
+          <li><strong>s7-distill</strong> — self-distillation: the soup teacher's soft ordinal logits (T&nbsp;=&nbsp;3) train a same-size student, transferring the ensemble's dark knowledge into one deployable model.</li>
+          <li><strong>Contract unchanged</strong> — every version keeps <code>(1,3,H,W) &rarr; (1,5)</code>, so this playground tests them all without code changes.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Mobile contract</h2>
+        <ul class="arch-list">
+          <li><strong>Size budget</strong> — INT8 export &le; 5&nbsp;MB (current flagship: 3.4&nbsp;MB, 3.7&times; compression, parity drift &lt; 0.004).</li>
+          <li><strong>Latency budget</strong> — &le; 120&nbsp;ms per inference on mid-tier Android CPU.</li>
+          <li><strong>Calibration</strong> — temperature-scaled; ECE tracked on every eval.</li>
+          <li><strong>Honesty gate</strong> — the 97% claim only counts when the Wilson 95% CI lower bound clears 0.97 with n&nbsp;&ge;&nbsp;1000.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <p><strong>Research &amp; education only</strong> — not a medical device. Predictions must not be used for clinical decisions.</p>
+  <p class="muted">RetinaEdge-DR · ICDRSS 5-grade scheme · referable DR = grade &ge; 2 · models run locally in your browser</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

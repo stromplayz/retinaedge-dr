@@ -1,0 +1,13 @@
+{
+  "src": "artifacts/release/dr_s5fusion_soup.onnx",
+  "dst": "site/models/dr_s5fusion_soup.qdq.onnx",
+  "fp32_bytes": 13470300,
+  "qdq_bytes": 3568726,
+  "compression_ratio": 3.775,
+  "drift_max_abs": 0.008284,
+  "drift_mean_abs": 0.002875,
+  "latency_ms_fp32_p50": 7.6,
+  "latency_ms_qdq_p50": 4.257,
+  "quantize_seconds": 2.4,
+  "calibration": "synthetic smooth fields (seeded), n=48"
+}

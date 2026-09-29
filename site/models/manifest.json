@@ -1,0 +1,254 @@
+{
+  "schema": "retinaedge/site-manifest@1",
+  "generated_at": "2026-09-29T18:27:37Z",
+  "repo": "stromplayz/retinaedge-dr",
+  "release": "v0.2.0-mobile",
+  "contract": {
+    "input": "float32 (1,3,H,W) ImageNet-normalized",
+    "output": "(1,5) grade probabilities (softmax embedded)",
+    "grade_scheme": "ICDRSS 0-4",
+    "referable_rule": "grade >= 2 or sum(p[2:]) > 0.5"
+  },
+  "grades": [
+    {
+      "id": 0,
+      "name": "No DR",
+      "short": "NoDR"
+    },
+    {
+      "id": 1,
+      "name": "Mild",
+      "short": "Mild"
+    },
+    {
+      "id": 2,
+      "name": "Moderate",
+      "short": "Mod"
+    },
+    {
+      "id": 3,
+      "name": "Severe",
+      "short": "Sev"
+    },
+    {
+      "id": 4,
+      "name": "Proliferative DR",
+      "short": "PDR"
+    }
+  ],
+  "models": [
+    {
+      "id": "s5fusion-soup-int8",
+      "label": "S5-Fusion \u00b7 Soup \u00b7 INT8",
+      "stage": "s5-fusion",
+      "variant": "soup",
+      "quant": "int8-qdq",
+      "file": "models/dr_s5fusion_soup.qdq.onnx",
+      "size_mb": 3.4,
+      "input": {
+        "h": 224,
+        "w": 224,
+        "resize_longest": 256,
+        "mean": [
+          0.485,
+          0.456,
+          0.406
+        ],
+        "std": [
+          0.229,
+          0.224,
+          0.225
+        ]
+      },
+      "metrics": {
+        "val_qwk": 0.6437,
+        "auc_refer": 0.0,
+        "ece": 0.1645,
+        "n_parameters": 3377413,
+        "n_val": 1843,
+        "campaign_best": {
+          "variant": "soup+tta",
+          "stage": "s5-fusion",
+          "acc_refer": 0.8904,
+          "qwk": 0.845,
+          "sens_refer": 0.8546,
+          "spec_refer": 0.9173,
+          "ci95_lo": 0.8753,
+          "ci95_hi": 0.9039,
+          "n": 1843
+        },
+        "note": "Flagship: weight-averaged soup, int8-quantized (3.7x smaller)"
+      },
+      "recommended": true,
+      "notes": "Best mobile pick \u2014 3.4MB, fits the <5MB mobile budget; campaign-best accuracy variant QDQ int8 for browser WASM compat"
+    },
+    {
+      "id": "s5fusion-soup-fp32",
+      "label": "S5-Fusion \u00b7 Soup \u00b7 FP32",
+      "stage": "s5-fusion",
+      "variant": "soup",
+      "quant": "fp32",
+      "file": "models/dr_s5fusion_soup.onnx",
+      "size_mb": 12.85,
+      "input": {
+        "h": 224,
+        "w": 224,
+        "resize_longest": 256,
+        "mean": [
+          0.485,
+          0.456,
+          0.406
+        ],
+        "std": [
+          0.229,
+          0.224,
+          0.225
+        ]
+      },
+      "metrics": {
+        "val_qwk": 0.6437,
+        "auc_refer": 0.0,
+        "ece": 0.1645,
+        "n_parameters": 3377413,
+        "n_val": 1843,
+        "campaign_best": {
+          "variant": "soup+tta",
+          "stage": "s5-fusion",
+          "acc_refer": 0.8904,
+          "qwk": 0.845,
+          "sens_refer": 0.8546,
+          "spec_refer": 0.9173,
+          "ci95_lo": 0.8753,
+          "ci95_hi": 0.9039,
+          "n": 1843
+        },
+        "note": "Weight-averaged soup (same basin), highest-stability variant"
+      },
+      "recommended": false,
+      "notes": "Reference accuracy for the soup; use INT8 for mobile"
+    },
+    {
+      "id": "s5fusion-best-int8",
+      "label": "S5-Fusion \u00b7 Best \u00b7 INT8",
+      "stage": "s5-fusion",
+      "variant": "best",
+      "quant": "int8-qdq",
+      "file": "models/dr_s5fusion_best.qdq.onnx",
+      "size_mb": 3.4,
+      "input": {
+        "h": 224,
+        "w": 224,
+        "resize_longest": 256,
+        "mean": [
+          0.485,
+          0.456,
+          0.406
+        ],
+        "std": [
+          0.229,
+          0.224,
+          0.225
+        ]
+      },
+      "metrics": {
+        "val_qwk": 0.6437,
+        "auc_refer": 0.0,
+        "ece": 0.1645,
+        "n_parameters": 3377413,
+        "n_val": 1843,
+        "campaign_best": {
+          "variant": "soup+tta",
+          "stage": "s5-fusion",
+          "acc_refer": 0.8904,
+          "qwk": 0.845,
+          "sens_refer": 0.8546,
+          "spec_refer": 0.9173,
+          "ci95_lo": 0.8753,
+          "ci95_hi": 0.9039,
+          "n": 1843
+        },
+        "note": "Single best epoch (EMA weights), int8"
+      },
+      "recommended": false,
+      "notes": "QDQ int8 for browser WASM compat"
+    },
+    {
+      "id": "s5fusion-best-fp32",
+      "label": "S5-Fusion \u00b7 Best \u00b7 FP32",
+      "stage": "s5-fusion",
+      "variant": "best",
+      "quant": "fp32",
+      "file": "models/dr_s5fusion_best.onnx",
+      "size_mb": 12.85,
+      "input": {
+        "h": 224,
+        "w": 224,
+        "resize_longest": 256,
+        "mean": [
+          0.485,
+          0.456,
+          0.406
+        ],
+        "std": [
+          0.229,
+          0.224,
+          0.225
+        ]
+      },
+      "metrics": {
+        "val_qwk": 0.6437,
+        "auc_refer": 0.0,
+        "ece": 0.1645,
+        "n_parameters": 3377413,
+        "n_val": 1843,
+        "campaign_best": {
+          "variant": "soup+tta",
+          "stage": "s5-fusion",
+          "acc_refer": 0.8904,
+          "qwk": 0.845,
+          "sens_refer": 0.8546,
+          "spec_refer": 0.9173,
+          "ci95_lo": 0.8753,
+          "ci95_hi": 0.9039,
+          "n": 1843
+        },
+        "note": "Single best epoch (EMA weights)"
+      },
+      "recommended": false,
+      "notes": ""
+    },
+    {
+      "id": "v011-pilot-fp32",
+      "label": "v0.1.1 Pilot \u00b7 FP32",
+      "stage": "online-pilot",
+      "variant": "best",
+      "quant": "fp32",
+      "file": "models/model.onnx",
+      "size_mb": 5.84,
+      "input": {
+        "h": 160,
+        "w": 160,
+        "resize_longest": 256,
+        "mean": [
+          0.485,
+          0.456,
+          0.406
+        ],
+        "std": [
+          0.229,
+          0.224,
+          0.225
+        ]
+      },
+      "metrics": {
+        "val_qwk": 0.0,
+        "auc_refer": 0.0,
+        "ece": 0.0,
+        "n_val": null,
+        "note": "v0.1.1 data-pilot (mobilenetv3_small_100 @160, APTOS 3.6k) \u2014 first real-data model"
+      },
+      "recommended": false,
+      "notes": "First real-data model trained inside GitHub Actions (APTOS pilot)"
+    }
+  ]
+}

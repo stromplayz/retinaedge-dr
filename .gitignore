@@ -71,3 +71,10 @@ android/captures/
 
 # Demo
 demo/screenshots/
+
+# Web playground: ONNX weights are downloaded from release assets at deploy
+# time (pages.yml); only the generated manifest is committed.
+site/models/*.onnx
+site/models/*.json
+!site/models/manifest.json
+!site/models/qdq_*_report.json
