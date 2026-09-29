@@ -26,3 +26,22 @@ Stage Summary:
   4. Synthetic split offsets defined as {train:0, val:1e6, test:2e6} (contract left them open)
 - docs/DATASETS.md already present (other agent) — verified consistent with implemented CLIs; typo there (`".f]"`) left for its owner
 - Full pytest has failures in OTHER agents' modules (metrics/model_build/train_pipeline) — out of scope; tests/test_data.py + test_ordinal_ops.py + test_loss-related data paths pass
+
+---
+Task ID: 7
+Agent: main agent (cadence loop)
+Task: Every-3-hour improvement cron + version-bump automation toward 1.0
+
+Work Log:
+- auto_improve.py: campaign rounds (ladder exhausted + goal open -> budget escalates small->medium->full, champion preserved); --max-rounds; history entries carry round; persisted budget wins over CLI seed
+- scripts/bump_release.py: deterministic semver decision (goal -> 1.0.0, >= +0.005 acc_refer -> minor, post-1.0 -> patch), release notes + ledger writer, GITHUB_OUTPUT emitter
+- scripts/rotate_dataset.py: scheduled runs rotate top-priority Kaggle catalog handles by campaign history length
+- improve.yml: cron 17 */3 * * *; restore champion ckpts from previous improve-run artifact (soup/distill continuity); dataset rotation w/ fallback; bump + tag + release steps; max_stages 3
+- runs/version_state.json ledger seeded from v0.3.0-arch3x champion; .gitignore exception added
+- tests: TestRoundEscalation (6) + test_bump_release.py (13) — all green locally; ruff clean
+- docs/WORKFLOWS.md: cadence section incl. minutes-budget guidance
+
+Stage Summary:
+- Cron every 3h trains, escalates, and self-releases: v0.4.0..v0.9.0 on +0.5% steps, v1.0.0 when the 97% goal (CI-gated when require_ci) is hit
+- First run dispatched and verified in_progress (run 36617918655); stale pre-push run cancelled (its commit could not have pushed)
+- KAGGLE_API_TOKEN secret confirmed present in repo
