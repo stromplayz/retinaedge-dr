@@ -1,0 +1,6 @@
+{
+  "last_version": "0.3.0",
+  "last_acc": 0.8903960933260987,
+  "released_at": "2026-09-27T00:10:00Z",
+  "note": "Seeded from the v0.3.0-arch3x champion (s5-fusion soup+tta, acc_refer 0.8904, n=1843). The bump_release script owns this ledger from now on: goal reached -> 1.0.0, else minor bump when acc_refer improves by >= 0.005."
+}

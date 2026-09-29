@@ -11,7 +11,9 @@ from retinaedge.train.auto_improve import (
     Stage,
     build_ladder,
     load_state,
+    next_budget,
     pick_best_variant,
+    run_campaign,
     save_state,
     variant_metrics,
 )
@@ -122,3 +124,118 @@ class TestLadderV3:
         for stage in ladder[1:]:
             resolved = stage.resolved({"e1": 6, "e2": 14, "sz": 224, "sz2": 288})
             assert "train.ema=true" in resolved, stage.name
+
+
+class TestRoundEscalation:
+    """v0.4.0: campaign rounds escalate the budget until the goal or ceiling."""
+
+    def test_next_budget_order(self):
+        assert next_budget("small") == "medium"
+        assert next_budget("medium") == "full"
+        assert next_budget("full") is None
+        assert next_budget("galactic") is None
+
+    @staticmethod
+    def _exhausted_state(budget: str, round_no: int = 1) -> dict:
+        """State where every ladder stage of the given round is complete."""
+        return {
+            "target": 0.97,
+            "budget": budget,
+            "round": round_no,
+            "goal_reached": False,
+            "best": None,
+            "history": [{"stage": s.name, "round": round_no} for s in build_ladder(budget)],
+            "updated_at": "",
+        }
+
+    def test_escalates_when_ladder_exhausted(self, tmp_path):
+        p = tmp_path / "improve_state.json"
+        p.write_text(json.dumps(self._exhausted_state("small", 1)))
+        state = run_campaign(
+            config="configs/train/smoke.yaml",
+            budget="small",
+            target=0.97,
+            max_stages=7,
+            state_path=str(p),
+            log_path=str(tmp_path / "log.md"),
+            device="cpu",
+            dry_run=True,
+        )
+        assert state["round"] == 2
+        assert state["budget"] == "medium"
+
+    def test_stops_at_full_budget(self, tmp_path):
+        p = tmp_path / "improve_state.json"
+        p.write_text(json.dumps(self._exhausted_state("full", 3)))
+        state = run_campaign(
+            config="configs/train/smoke.yaml",
+            budget="full",
+            target=0.97,
+            max_stages=7,
+            state_path=str(p),
+            log_path=str(tmp_path / "log.md"),
+            device="cpu",
+            dry_run=True,
+        )
+        assert state["round"] == 3
+        assert state["budget"] == "full"
+
+    def test_no_escalation_after_goal(self, tmp_path):
+        s = self._exhausted_state("small", 1)
+        s["goal_reached"] = True
+        p = tmp_path / "improve_state.json"
+        p.write_text(json.dumps(s))
+        state = run_campaign(
+            config="configs/train/smoke.yaml",
+            budget="small",
+            target=0.97,
+            max_stages=7,
+            state_path=str(p),
+            log_path=str(tmp_path / "log.md"),
+            device="cpu",
+            dry_run=True,
+        )
+        assert state["round"] == 1
+        assert state["budget"] == "small"
+
+    def test_persisted_budget_wins_over_cli_seed(self, tmp_path):
+        """A dispatched --budget=small cannot downgrade an escalated campaign."""
+        p = tmp_path / "improve_state.json"
+        p.write_text(json.dumps(self._exhausted_state("medium", 2)))
+        state = run_campaign(
+            config="configs/train/smoke.yaml",
+            budget="small",
+            target=0.97,
+            max_stages=7,
+            state_path=str(p),
+            log_path=str(tmp_path / "log.md"),
+            device="cpu",
+            dry_run=True,
+        )
+        assert state["round"] == 3
+        assert state["budget"] == "full"
+
+    def test_pending_stages_block_escalation(self, tmp_path):
+        """A partially completed ladder continues, never escalates early."""
+        s = self._exhausted_state("small", 1)
+        s["history"] = s["history"][:3]  # s1..s3 done, s4..s7 pending
+        p = tmp_path / "improve_state.json"
+        p.write_text(json.dumps(s))
+        state = run_campaign(
+            config="configs/train/smoke.yaml",
+            budget="small",
+            target=0.97,
+            max_stages=7,
+            state_path=str(p),
+            log_path=str(tmp_path / "log.md"),
+            device="cpu",
+            dry_run=True,
+        )
+        assert state["round"] == 1
+        assert state["budget"] == "small"
+
+    def test_history_entries_carry_round(self, tmp_path):
+        """done-stage detection is per-round: old rounds never mask new ladders."""
+        s = self._exhausted_state("small", 1)
+        # Round-2 history is empty at escalation time -> nothing is "done".
+        assert {h["stage"] for h in s["history"] if h.get("round") == 2} == set()

@@ -16,6 +16,12 @@ Ladder (each rung keeps every previous winning trick and adds one):
     s4-backbone     — stronger backbone (efficientnet_lite0)
     s5-fusion       — stronger backbone + sharper still + EMA (the "full send")
 
+When every rung of the current round is complete and the goal is still open,
+the campaign starts a NEW ROUND at the next budget level (small -> medium ->
+full): same ladder, stronger settings, champion preserved. This is what lets
+the every-3-hours scheduled workflow grind toward the goal indefinitely
+(capped by ``--max-rounds``).
+
 Usage:
     python -m retinaedge.train.auto_improve --config configs/train/online_pilot.yaml \
         --budget small --target 0.97 --max-stages 5
@@ -44,6 +50,7 @@ __all__ = [
     "save_state",
     "variant_metrics",
     "pick_best_variant",
+    "next_budget",
     "main",
 ]
 
@@ -69,6 +76,17 @@ class Stage:
     def resolved(self, params: dict[str, float]) -> tuple[str, ...]:
         """Substitute budget placeholders into the overrides."""
         return tuple(ovr.format(**params) for ovr in self.overrides)
+
+
+_BUDGET_ORDER = ["small", "medium", "full"]
+
+
+def next_budget(budget: str) -> str | None:
+    """Next rung of the budget-escalation ladder (``None`` at the ceiling)."""
+    if budget not in _BUDGET_ORDER:
+        return None
+    i = _BUDGET_ORDER.index(budget)
+    return _BUDGET_ORDER[i + 1] if i + 1 < len(_BUDGET_ORDER) else None
 
 
 def build_ladder(budget: str) -> list[Stage]:
@@ -146,6 +164,7 @@ def default_state(target: float, budget: str) -> dict:
     return {
         "target": float(target),
         "budget": budget,
+        "round": 1,
         "goal_reached": False,
         "best": None,
         "history": [],
@@ -436,21 +455,58 @@ def run_campaign(
     log_path: str = "runs/improvement_log.md",
     device: str = "auto",
     require_ci: bool = False,
+    max_rounds: int = 10,
     dry_run: bool = False,
 ) -> dict:
     """Execute (or plan, with ``dry_run``) the escalation ladder.
 
     Returns the final state dict. Designed to be resumable: completed stages
-    recorded in the state file are skipped on the next invocation.
+    recorded in the state file are skipped on the next invocation, and once a
+    whole ladder round completes without the goal, the budget escalates
+    (small -> medium -> full) and the next round begins.
     """
-    ladder = build_ladder(budget)
-    params = _BUDGETS[budget]
     state = load_state(state_path) or default_state(target, budget)
-    done_names = {h["stage"] for h in state["history"]}
+    state.setdefault("round", 1)
+    # A started campaign owns its (possibly escalated) budget: the persisted
+    # value wins over the CLI seed so scheduled runs continue the escalation.
+    if state.get("budget") in _BUDGETS:
+        budget = state["budget"]
     state["target"], state["budget"] = float(target), budget
 
+    ladder = build_ladder(budget)
+    params = _BUDGETS[budget]
+    round_no = int(state["round"])
+
+    def _round_done() -> set[str]:
+        return {h["stage"] for h in state["history"] if int(h.get("round", 1)) == round_no}
+
+    done_names = _round_done()
+
+    # Round escalation: ladder exhausted + goal still open -> stronger budget.
+    while (
+        ladder
+        and all(stage.name in done_names for stage in ladder)
+        and not state.get("goal_reached")
+        and round_no < max(1, int(max_rounds))
+    ):
+        escalated = next_budget(budget)
+        if escalated is None:
+            _LOGGER.info(
+                "ladder exhausted at budget=%s (round %d) with goal open — "
+                "already at the escalation ceiling",
+                budget,
+                round_no,
+            )
+            break
+        round_no += 1
+        budget = escalated
+        state["round"], state["budget"] = round_no, budget
+        ladder, params = build_ladder(budget), _BUDGETS[budget]
+        done_names = _round_done()
+        _LOGGER.info("=== round %d begins: budget escalated to %s ===", round_no, budget)
+
     if dry_run:
-        print(f"Ladder plan (budget={budget}, target={target:.2%}):")
+        print(f"Ladder plan (round {round_no}, budget={budget}, target={target:.2%}):")
         for i, stage in enumerate(ladder[: max(1, max_stages)]):
             ovr = stage.resolved(params)
             status = "DONE" if stage.name in done_names else "pending"
@@ -515,6 +571,7 @@ def run_campaign(
         state["history"].append(
             {
                 "stage": stage.name,
+                "round": round_no,
                 "best_variant": best_name,
                 "acc_refer": best["acc_refer"],
                 "qwk": max(best["qwk"], best["qwk_cuts"]),
@@ -557,6 +614,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--budget", default="small", choices=sorted(_BUDGETS))
     parser.add_argument("--target", type=float, default=0.97, help="accuracy goal (referable DR)")
     parser.add_argument("--max-stages", type=int, default=5)
+    parser.add_argument(
+        "--max-rounds", type=int, default=10, help="campaign rounds before escalation stops"
+    )
     parser.add_argument("--state", default="runs/improve_state.json")
     parser.add_argument("--log", default="runs/improvement_log.md")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
@@ -582,6 +642,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             log_path=args.log,
             device=args.device,
             require_ci=args.require_ci,
+            max_rounds=args.max_rounds,
             dry_run=args.dry_run,
         )
     except Exception:

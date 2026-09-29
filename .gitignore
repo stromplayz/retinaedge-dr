@@ -8,6 +8,7 @@
 runs/*
 !runs/improvement_log.md
 !runs/improve_state.json
+!runs/version_state.json
 outputs/
 
 # Model binaries go to GitHub Releases (or LFS), not git

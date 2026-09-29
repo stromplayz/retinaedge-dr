@@ -2,6 +2,12 @@
 # referable-DR accuracy) using the full loophole stack (TTA + soup + cut-point
 # decoding + threshold search), then commit progress back to the repo.
 #
+# CADENCE: runs every 3 hours on schedule (plus manual dispatch). Each run
+# resumes the campaign state, trains up to max_stages ladder stages, escalates
+# the budget round when a ladder completes without the goal, and cuts a
+# semantic release (v0.4.0, ... -> v1.0.0) whenever the champion improves by
+# >= 0.005 or the goal is reached (scripts/bump_release.py decides).
+#
 # Each invocation is RESUMABLE: runs/improve_state.json records completed
 # ladder stages, so scheduled runs continue the campaign instead of repeating
 # work. Logs (runs/improvement_log.md) and state are committed back so the
@@ -26,8 +32,11 @@ on:
         description: "Accuracy goal (referable DR)"
         default: "0.97"
       max_stages:
-        description: "Max ladder stages per invocation"
-        default: "7"
+        description: "Max ladder stages per invocation (3h cadence: keep runs bounded)"
+        default: "3"
+      max_rounds:
+        description: "Campaign rounds before escalation stops (budget small->medium->full)"
+        default: "10"
       config:
         description: "Training config (blank = auto: kaggle->kaggle_blend, hf->online_pilot)"
         default: ""
@@ -47,8 +56,10 @@ on:
         type: boolean
         default: false
   schedule:
-    # Every 3 days at 03:07 UTC — keeps the campaign advancing autonomously.
-    - cron: "7 3 */3 * *"
+    # Every 3 hours (xx:17 UTC) — the campaign advances around the clock:
+    # each run resumes runs/improve_state.json, trains up to max_stages ladder
+    # stages, and on improvement cuts a cadence release toward v1.0.0.
+    - cron: "17 */3 * * *"
 
 permissions:
   contents: write
@@ -68,7 +79,8 @@ jobs:
     env:
       INPUTS_BUDGET: ${{ inputs.budget || 'small' }}
       INPUTS_TARGET: ${{ inputs.target || '0.97' }}
-      INPUTS_MAX_STAGES: ${{ inputs.max_stages || '7' }}
+      INPUTS_MAX_STAGES: ${{ inputs.max_stages || '3' }}
+      INPUTS_MAX_ROUNDS: ${{ inputs.max_rounds || '10' }}
       INPUTS_CONFIG: ${{ inputs.config || '' }}
       INPUTS_MODE: ${{ inputs.dataset_mode || 'kaggle' }}
       INPUTS_KAGGLE: ${{ inputs.kaggle_dataset || 'jin0507/ddr-aptos-2019-idrid-and-messidor-2-256-x-256' }}
@@ -91,6 +103,24 @@ jobs:
           extras: dev
           cpu_torch: "true"
 
+      - name: Restore champion checkpoints (cross-run continuity for soup/distill)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN_ID=$(gh run list --workflow improve.yml --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId // ""')
+          if [ -n "$RUN_ID" ]; then
+            gh run download "$RUN_ID" -n improve-run -D /tmp/restore || true
+          fi
+          if [ -n "$(find /tmp/restore -name '*.pt' -print -quit 2>/dev/null)" ]; then
+            mkdir -p runs
+            cp -a /tmp/restore/runs/. runs/
+            echo "restored checkpoints from improve-run artifact (run $RUN_ID)"
+          else
+            echo "no prior checkpoint artifact — fresh ladder (distill falls back to trainer)"
+          fi
+
       - name: Install data stack (kagglehub + HF)
         run: python -m pip install "kagglehub>=1.0" "datasets>=2.19" "huggingface_hub>=0.23"
 
@@ -100,7 +130,21 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
-          python -m retinaedge.data.download_kaggle --handle "$INPUTS_KAGGLE" --dest data/blend_raw
+          HANDLE="$INPUTS_KAGGLE"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ROT=$(python scripts/rotate_dataset.py \
+              --catalog configs/data/kaggle_dr_catalog.yaml \
+              --state runs/improve_state.json || true)
+            if [ -n "$ROT" ] && [ "$ROT" != "$INPUTS_KAGGLE" ]; then HANDLE="$ROT"; fi
+          fi
+          echo "dataset handle: $HANDLE"
+          if ! python -m retinaedge.data.download_kaggle --handle "$HANDLE" --dest data/blend_raw; then
+            if [ "$HANDLE" = "$INPUTS_KAGGLE" ]; then
+              exit 1
+            fi
+            echo "rotated handle failed — falling back to the default handle"
+            python -m retinaedge.data.download_kaggle --handle "$INPUTS_KAGGLE" --dest data/blend_raw
+          fi
           # Manifest-style blends (image_path/grade/split CSVs) -> standard layout
           if python -m retinaedge.data.manifest_import --raw data/blend_raw/raw --out data/kaggle_blend; then
             echo "manifest blend imported"
@@ -151,9 +195,19 @@ jobs:
             --budget "$INPUTS_BUDGET" \
             --target "$INPUTS_TARGET" \
             --max-stages "$INPUTS_MAX_STAGES" \
+            --max-rounds "$INPUTS_MAX_ROUNDS" \
             --state runs/improve_state.json \
             --log runs/improvement_log.md \
             ${EXTRA[@]+"${EXTRA[@]}"}
+
+      - name: Decide version bump (campaign -> semver toward 1.0.0)
+        id: bump
+        run: |
+          python scripts/bump_release.py \
+            --state runs/improve_state.json \
+            --version-state runs/version_state.json \
+            --out runs/release_notes.md \
+            --min-delta 0.005
 
       - name: Job summary (campaign state)
         if: always()
@@ -193,11 +247,29 @@ jobs:
         run: |
           git config user.name "retinaedge-bot"
           git config user.email "retinaedge-bot@users.noreply.github.com"
-          git add runs/improvement_log.md runs/improve_state.json 2>/dev/null || true
+          git add runs/improvement_log.md runs/improve_state.json runs/version_state.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No state changes to commit."
           else
             git commit -m "chore(improve): campaign progress $(date -u +%Y-%m-%dT%H:%MZ)" \
-              -m "Auto-committed by the continuous-improve workflow (state + log only, no data/models)."
+              -m "Auto-committed by the continuous-improve workflow (state + log + version ledger only, no data/models)."
             git push
           fi
+
+      - name: Tag + release on improvement (cadence versions toward v1.0.0)
+        if: steps.bump.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMP_TAG: ${{ steps.bump.outputs.tag }}
+          BUMP_CKPT: ${{ steps.bump.outputs.ckpt }}
+        run: |
+          set -euo pipefail
+          git config user.name "retinaedge-bot"
+          git config user.email "retinaedge-bot@users.noreply.github.com"
+          git tag -a "$BUMP_TAG" -m "RetinaEdge-DR $BUMP_TAG — automated improvement release"
+          git push origin "$BUMP_TAG"
+          ARGS=(--title "RetinaEdge-DR $BUMP_TAG" --notes-file runs/release_notes.md)
+          if [ -n "$BUMP_CKPT" ] && [ -f "$BUMP_CKPT" ]; then
+            ARGS+=("$BUMP_CKPT#champion-checkpoint-$BUMP_TAG")
+          fi
+          gh release create "$BUMP_TAG" "${ARGS[@]}"
