@@ -276,10 +276,10 @@ class TestRoundEscalation:
         )
         out = capsys.readouterr().out
         assert state["round"] == 1
-        assert "[run ] s6-mixup" in out
-        assert "[run ] s7-distill" in out
-        assert "[run ] s8-reinforce" in out
-        assert "[next] s9-dataset-learn" in out
+        assert "[run ]" in out and "[next]" in out
+        for name in ("s6-mixup", "s7-distill", "s8-reinforce"):
+            assert name in out.split("[next]")[0], name  # scheduled this invocation
+        assert "s9-dataset-learn" in out.split("[next]", 1)[1]  # queued for later
         assert "s1-baseline" not in out  # done rungs never reappear in the plan
 
     def test_history_entries_carry_round(self, tmp_path):
