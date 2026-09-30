@@ -276,11 +276,13 @@ class TestRoundEscalation:
         )
         out = capsys.readouterr().out
         assert state["round"] == 1
-        assert "[run ]" in out and "[next]" in out
+        run_lines = [line for line in out.splitlines() if "[run ]" in line]
+        next_lines = [line for line in out.splitlines() if "[next]" in line]
+        assert len(run_lines) == 3
         for name in ("s6-mixup", "s7-distill", "s8-reinforce"):
-            assert name in out.split("[next]")[0], name  # scheduled this invocation
-        assert "s9-dataset-learn" in out.split("[next]", 1)[1]  # queued for later
-        assert "s1-baseline" not in out  # done rungs never reappear in the plan
+            assert any(name in line for line in run_lines), name  # this invocation
+        assert any("s9-dataset-learn" in line for line in next_lines)  # queued later
+        assert not any("s1-baseline" in line for line in run_lines + next_lines)
 
     def test_history_entries_carry_round(self, tmp_path):
         """done-stage detection is per-round: old rounds never mask new ladders."""
