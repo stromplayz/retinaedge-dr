@@ -130,7 +130,10 @@ Fit temperature on val split (NLL minimisation, LBFGS), write `{"temperature": t
 # wrappers.py
 class InferenceWrapper(nn.Module):
     """Wraps DrNet (+ temperature) -> forward(x) -> probs (B,5) float32. Export-safe (no dict output)."""
+
     def __init__(self, model: DrNet): ...
+
+
 # CLI: python -m retinaedge.export.export_onnx --config configs/train/smoke.yaml \
 #        --ckpt artifacts/smoke/best.pt --out artifacts/smoke/model.onnx [--img-size 64] [--opset 17] [--dynamic-batch]
 #   Verifies parity vs torch (atol 1e-3) when onnxruntime importable; prints size + latency summary.
