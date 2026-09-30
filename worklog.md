@@ -45,3 +45,22 @@ Stage Summary:
 - Cron every 3h trains, escalates, and self-releases: v0.4.0..v0.9.0 on +0.5% steps, v1.0.0 when the 97% goal (CI-gated when require_ci) is hit
 - First run dispatched and verified in_progress (run 36617918655); stale pre-push run cancelled (its commit could not have pushed)
 - KAGGLE_API_TOKEN secret confirmed present in repo
+
+---
+Task ID: 8
+Agent: main agent (public flip + next-level release)
+Task: Make repo public, next-model-level ladder, data maximalism, detailed release pages
+
+Work Log:
+- Secret-scanned all tracked files (clean) -> PATCH /repos -> visibility public (unlimited Actions minutes)
+- Diagnosed failed run 36617918655: restore step 403 — permissions block lacked actions:read; fixed
+- Ladder: added s8-reinforce (focal_gamma 3.0, refer_weight 0.5 — reward-shaped) and s9-dataset-learn (mixup 0.4, smoothing 0.1, balanced sampler)
+- rotate_dataset.py: parses handle+bytes pairs, --max-bytes 9GB disk guard; workflow rotates top-4 fitting handles (APTOS-2019 8.6GB, 224px blend, Messidor-2, labels)
+- bump_release.py: release pages now include champion metrics, campaign leaderboard, training-data provenance, try-the-champion links, run permalink
+- Tests: updated ladder tests for 9-stage ladder, new test_rotate_dataset.py (8), notes assertions; 40 green locally (CPU torch), ruff clean
+- Enabled GitHub Pages (build_type workflow) and dispatched pages.yml; dispatched improve.yml again
+
+Stage Summary:
+- Repo public: https://github.com/stromplayz/retinaedge-dr — Actions quota pressure gone
+- Site target: https://stromplayz.github.io/retinaedge-dr/ (deploy in flight)
+- 3h loop now: restores ckpts (unblocked), rotates size-fitting datasets, trains s8/s9 next-level stages, ships detailed cadence releases toward v1.0.0
