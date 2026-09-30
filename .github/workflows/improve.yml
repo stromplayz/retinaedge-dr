@@ -63,6 +63,7 @@ on:
 
 permissions:
   contents: write
+  actions: read # restore step: gh run list/download of the previous improve-run artifact
 
 concurrency:
   group: improve-loop
@@ -134,7 +135,8 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             ROT=$(python scripts/rotate_dataset.py \
               --catalog configs/data/kaggle_dr_catalog.yaml \
-              --state runs/improve_state.json || true)
+              --state runs/improve_state.json \
+              --max-bytes 9000000000 --top 4 || true)
             if [ -n "$ROT" ] && [ "$ROT" != "$INPUTS_KAGGLE" ]; then HANDLE="$ROT"; fi
           fi
           echo "dataset handle: $HANDLE"

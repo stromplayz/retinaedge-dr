@@ -123,3 +123,20 @@ champion preserved, `--max-rounds` caps the escalation. A dispatched
 4,000-9,000 Actions minutes/month. If the free tier (2,000 min) is exhausted,
 either make the repo public (unlimited standard-runner minutes), raise the
 cadence back to 6-12 hours, or attach a larger Actions quota.
+
+### v0.4.0 additions
+
+- **Ladder stages s8-reinforce / s9-dataset-learn**: the campaign now trains a
+  reward-shaped focal round (focal_gamma 3.0, refer_weight 0.5 — reinforcement-
+  style emphasis on referable misses) and a dataset-learning round (mixup 0.4,
+  label smoothing 0.1, inverse-frequency sampling) on top of the v0.3.0 recipe.
+- **Size-guarded data maximalism**: scheduled runs rotate among the first four
+  catalog handles whose archives fit the runner disk (`--max-bytes 9GB`),
+  e.g. APTOS-2019 original resolution plus the 224px Gaussian-filtered blend
+  and Messidor-2 — the 22-24 GB mirrors are skipped automatically.
+- **Richer release pages**: every cadence release now carries the champion
+  metrics table, the campaign leaderboard, dataset provenance, "try the
+  champion" links (web playground / Android / Python), and a permalink to the
+  producing workflow run.
+- **Public repo**: unlimited standard-runner Actions minutes; the scheduled
+  3-hour loop runs without quota pressure.

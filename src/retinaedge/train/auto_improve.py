@@ -151,6 +151,33 @@ def build_ladder(budget: str) -> list[Stage]:
             ),
             runner="distill",
         ),
+        Stage(
+            "s8-reinforce",
+            "reward-shaped focal round — referable misses penalized harder (v0.4.0)",
+            (
+                "model.backbone=efficientnet_lite0",
+                "data.img_size={sz2}",
+                "train.epochs={e2}",
+                "train.ema=true",
+                "train.patience=6",
+                "train.loss.focal_gamma=3.0",
+                "train.loss.refer_weight=0.5",
+            ),
+        ),
+        Stage(
+            "s9-dataset-learn",
+            "dataset-learning round — stronger mixup + smoothing + balanced sampling (v0.4.0)",
+            (
+                "model.backbone=efficientnet_lite0",
+                "data.img_size={sz2}",
+                "train.epochs={e2}",
+                "train.ema=true",
+                "train.patience=6",
+                "train.mixup_alpha=0.4",
+                "train.loss.label_smoothing=0.1",
+                "train.sampler=true",
+            ),
+        ),
     ]
 
 

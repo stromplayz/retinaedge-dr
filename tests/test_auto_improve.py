@@ -101,22 +101,41 @@ class TestLadderV3:
     def test_ladder_ends_with_v3_stages(self):
         ladder = build_ladder("small")
         names = [s.name for s in ladder]
-        assert names[-2:] == ["s6-mixup", "s7-distill"]
+        assert "s6-mixup" in names and "s7-distill" in names
+        assert names[-2:] == ["s8-reinforce", "s9-dataset-learn"]
 
     def test_distill_runner_flag(self):
         ladder = build_ladder("medium")
-        assert all(s.runner == "trainer" for s in ladder[:-1])
-        assert ladder[-1].runner == "distill"
+        assert ladder[-1].runner == "trainer"  # v0.4.0 ladder ends on s9
+        distills = [s for s in ladder if s.runner == "distill"]
+        assert [s.name for s in distills] == ["s7-distill"]
 
     def test_v3_stages_resolve_placeholders(self):
         ladder = build_ladder("full")
-        s6, s7 = ladder[-2], ladder[-1]
+        s6, s7 = ladder[-4], ladder[-3]
         r6 = s6.resolved({"e2": 40, "sz2": 320})
         r7 = s7.resolved({"e2": 40, "sz2": 320})
         assert "train.mixup_alpha=0.2" in r6
         assert "train.loss.label_smoothing=0.05" in r6
         assert "data.img_size=320" in r7
         assert "model.backbone=efficientnet_lite0" in r7
+
+    def test_v4_reinforce_stage_reward_shaped(self):
+        """s8-reinforce: focal gamma up + referable weight up (RL-style shaping)."""
+        s8 = build_ladder("small")[-2]
+        resolved = s8.resolved({"e2": 4, "sz2": 224})
+        assert "train.loss.focal_gamma=3.0" in resolved
+        assert "train.loss.refer_weight=0.5" in resolved
+        assert "train.ema=true" in resolved
+        assert s8.runner == "trainer"
+
+    def test_v4_dataset_learn_stage(self):
+        """s9-dataset-learn: stronger mixup + smoothing + balanced sampling."""
+        s9 = build_ladder("medium")[-1]
+        resolved = s9.resolved({"e2": 14, "sz2": 288})
+        assert "train.mixup_alpha=0.4" in resolved
+        assert "train.loss.label_smoothing=0.1" in resolved
+        assert "train.sampler=true" in resolved
 
     def test_every_stage_keeps_prior_tricks(self):
         """Each rung must keep the escalation tricks (EMA, backbone, resolution)."""

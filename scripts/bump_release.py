@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -83,8 +84,44 @@ def _load_json(path: str | Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _fmt_notes(tag: str, campaign: dict, ledger: dict, min_delta: float) -> str:
-    """Markdown release notes summarizing the champion and the campaign."""
+def _leaderboard(history: list, k: int = 5) -> list[str]:
+    """Top-k ladder stages by referable accuracy — the campaign scoreboard."""
+    rows = sorted(history, key=lambda h: float(h.get("acc_refer", 0.0)), reverse=True)[:k]
+    lines = [
+        "## Campaign leaderboard (top stages)",
+        "",
+        "| rank | stage | variant | acc_refer | QWK |",
+        "|---|---|---|---|---|",
+    ]
+    for i, h in enumerate(rows, 1):
+        lines.append(
+            f"| {i} | `{h.get('stage', '?')}` | {h.get('best_variant', '?')} | "
+            f"{float(h.get('acc_refer', 0.0)):.4f} | {float(h.get('qwk', 0.0)):.4f} |"
+        )
+    return lines
+
+
+def _run_url() -> str:
+    """Permalink to the workflow run that produced this release (or '')."""
+    server, repo, run_id = (
+        os.environ.get("GITHUB_SERVER_URL"),
+        os.environ.get("GITHUB_REPOSITORY"),
+        os.environ.get("GITHUB_RUN_ID"),
+    )
+    if server and repo and run_id:
+        return f"{server}/{repo}/actions/runs/{run_id}"
+    return ""
+
+
+def _fmt_notes(
+    tag: str,
+    campaign: dict,
+    ledger: dict,
+    min_delta: float,
+    provenance: dict | None = None,
+    site_url: str = "",
+) -> str:
+    """Markdown release notes: champion metrics, leaderboard, data, usage."""
     best = campaign.get("best") or {}
     target = float(campaign.get("target", 0.97))
     acc = float(best.get("acc_refer", 0.0))
@@ -98,7 +135,9 @@ def _fmt_notes(tag: str, campaign: dict, ledger: dict, min_delta: float) -> str:
         f"# RetinaEdge-DR {tag} — automated cadence release",
         "",
         f"Goal: **{target:.0%} referable-DR accuracy** | campaign round {round_no} "
-        f"| budget `{campaign.get('budget', '?')}`",
+        f"| budget `{campaign.get('budget', '?')}` | ladder stages completed: {len(history)}",
+        "",
+        "## Champion metrics",
         "",
         "| metric | value |",
         "|---|---|",
@@ -109,22 +148,58 @@ def _fmt_notes(tag: str, campaign: dict, ledger: dict, min_delta: float) -> str:
         f"| QWK | {best.get('qwk', 0.0):.4f} |",
         f"| referable sens / spec | {best.get('sens_refer', 0.0):.4f} / {best.get('spec_refer', 0.0):.4f} |",
         f"| vs last release | {delta:+.4f} (release gate: >= +{min_delta:.3f} or goal) |",
-        f"| goal status | {'REACHED' if goal else 'not reached'} |",
+        f"| goal status | {'REACHED — 1.0.0 shipped' if goal else 'not reached yet'} |",
         "",
-        f"Ladder stages completed so far: {len(history)}. Full auditable history: "
-        "`runs/improvement_log.md` (committed to the repo by the improve workflow).",
+        "Training pipeline: supervised ordinal heads (CORAL) + reward-shaped focal "
+        "loss (reinforcement-style emphasis on referable misses) + EMA/model-soup "
+        "weight averaging + TTA + cut-point decoding + self-distillation + "
+        "class-balanced dataset learning — all trained inside GitHub Actions.",
         "",
-        "The champion checkpoint is attached for the web playground and mobile "
-        "pipelines. Data: Kaggle/HF fundus blends resolved inside GitHub Actions "
-        "(no local training).",
+    ]
+    lines += _leaderboard(history)
+
+    prov = provenance or {}
+    manifest = prov.get("manifest") or prov.get("dataset") or "?"
+    images = prov.get("images") or prov.get("total_images") or "?"
+    lines += [
+        "",
+        "## Training data",
+        "",
+        f"- resolved inside the run from the validated Kaggle catalog: `{manifest}`",
+        f"- images: {images} (patient-aware splits; external Messidor-2 kept for eval only)",
+        "- scheduled runs rotate the catalog (size-guarded) for data maximalism",
+        "",
+    ]
+
+    run_url = _run_url()
+    site = (
+        site_url
+        or f"https://{os.environ.get('GITHUB_REPOSITORY_OWNER', 'stromplayz')}.github.io/{(os.environ.get('GITHUB_REPOSITORY', 'stromplayz/retinaedge-dr').split('/')[-1])}/"
+    )
+    lines += [
+        "## Try the champion",
+        "",
+        f"- Web playground (no install): {site}",
+        "- Android: exported INT8 TFLite — see `docs/EXPORT_DEPLOY.md`",
+        "- Python:",
+        "",
+        "```python",
+        "from retinaedge.train.trainer import load_checkpoint",
+        "payload = load_checkpoint('champion-checkpoint.pt', map_location='cpu')  # attached asset",
+        "```",
+        "",
+    ]
+    if run_url:
+        lines += [f"Produced by workflow run: {run_url}", ""]
+    lines += [
+        "Full auditable history: `runs/improvement_log.md`. Next cadence run in 3h "
+        "continues the campaign until the 97% goal ships v1.0.0.",
         "",
     ]
     return "\n".join(lines)
 
 
 def _emit(should_release: bool, tag: str, ckpt: str) -> None:
-    import os
-
     out_file = os.environ.get("GITHUB_OUTPUT")
     payload = f"should_release={'true' if should_release else 'false'}\ntag={tag}\nckpt={ckpt}\n"
     print(payload, end="")
@@ -151,6 +226,16 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=0.0,
         help="seed last-released accuracy when the ledger file is missing",
+    )
+    parser.add_argument(
+        "--provenance",
+        default="data/kaggle_blend/provenance.json",
+        help="dataset provenance JSON written by manifest_import (optional)",
+    )
+    parser.add_argument(
+        "--site-url",
+        default="",
+        help="web playground URL for the release notes (default: Pages URL)",
     )
     args = parser.parse_args(argv)
 
@@ -205,7 +290,14 @@ def main(argv: list[str] | None = None) -> int:
     tmp.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
     tmp.replace(ledger_path)
 
-    notes = _fmt_notes(tag, campaign, ledger, args.min_delta)
+    notes = _fmt_notes(
+        tag,
+        campaign,
+        ledger,
+        args.min_delta,
+        provenance=_load_json(args.provenance) or None,
+        site_url=args.site_url,
+    )
     notes_path = Path(args.out)
     notes_path.parent.mkdir(parents=True, exist_ok=True)
     notes_path.write_text(notes, encoding="utf-8")

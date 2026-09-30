@@ -95,6 +95,9 @@ class TestEndToEnd:
         assert ledger["last_acc"] == 0.9100
         notes = notes_p.read_text()
         assert "0.4.0" in notes and "soup+tta" in notes
+        assert "## Campaign leaderboard" in notes
+        assert "## Try the champion" in notes
+        assert "## Training data" in notes
 
     def test_main_no_release_keeps_ledger(self, tmp_path):
         campaign = {
