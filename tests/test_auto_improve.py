@@ -253,6 +253,35 @@ class TestRoundEscalation:
         assert state["round"] == 1
         assert state["budget"] == "small"
 
+    def test_max_stages_counts_pending_not_ladder_head(self, tmp_path, capsys):
+        """Regression: a resumed campaign must train pending rungs, not stall.
+
+        With s1..s5 done and max_stages=3, slicing the ladder head would run
+        only completed stages (no-op). The pending window must schedule
+        s6-mixup, s7-distill, s8-reinforce instead.
+        """
+        s = self._exhausted_state("small", 1)
+        s["history"] = s["history"][:5]  # s1..s5 done of the 9-stage ladder
+        p = tmp_path / "improve_state.json"
+        p.write_text(json.dumps(s))
+        state = run_campaign(
+            config="configs/train/smoke.yaml",
+            budget="small",
+            target=0.97,
+            max_stages=3,
+            state_path=str(p),
+            log_path=str(tmp_path / "log.md"),
+            device="cpu",
+            dry_run=True,
+        )
+        out = capsys.readouterr().out
+        assert state["round"] == 1
+        assert "[run ] s6-mixup" in out
+        assert "[run ] s7-distill" in out
+        assert "[run ] s8-reinforce" in out
+        assert "[next] s9-dataset-learn" in out
+        assert "s1-baseline" not in out  # done rungs never reappear in the plan
+
     def test_history_entries_carry_round(self, tmp_path):
         """done-stage detection is per-round: old rounds never mask new ladders."""
         s = self._exhausted_state("small", 1)

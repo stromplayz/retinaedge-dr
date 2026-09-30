@@ -532,12 +532,20 @@ def run_campaign(
         done_names = _round_done()
         _LOGGER.info("=== round %d begins: budget escalated to %s ===", round_no, budget)
 
+    # Only PENDING stages count against max_stages: a resumed campaign whose
+    # early rungs are already done must still train its first max_stages
+    # pending rungs in this invocation (slicing the raw ladder head would
+    # silently train nothing once enough early stages are complete).
+    pending = [stage for stage in ladder if stage.name not in done_names]
+    to_run = pending[: max(1, max_stages)]
+
     if dry_run:
         print(f"Ladder plan (round {round_no}, budget={budget}, target={target:.2%}):")
-        for i, stage in enumerate(ladder[: max(1, max_stages)]):
+        for i, stage in enumerate(pending[: max(1, max_stages)], 1):
             ovr = stage.resolved(params)
-            status = "DONE" if stage.name in done_names else "pending"
-            print(f"  {i + 1}. {stage.name:14s} [{status}] {' '.join(ovr) or '(defaults)'}")
+            print(f"  {i}. {stage.name:14s} [run ] {' '.join(ovr) or '(defaults)'}")
+        for stage in pending[max(1, max_stages) :]:
+            print(f"  .  {stage.name:14s} [next] (later in this campaign)")
         return state
 
     if device == "auto":
@@ -545,7 +553,7 @@ def run_campaign(
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    for stage in ladder[: max(1, max_stages)]:
+    for stage in to_run:
         if stage.name in done_names:
             _LOGGER.info("skipping completed stage %s", stage.name)
             continue
