@@ -64,3 +64,18 @@ Stage Summary:
 - Repo public: https://github.com/stromplayz/retinaedge-dr — Actions quota pressure gone
 - Site target: https://stromplayz.github.io/retinaedge-dr/ (deploy in flight)
 - 3h loop now: restores ckpts (unblocked), rotates size-fitting datasets, trains s8/s9 next-level stages, ships detailed cadence releases toward v1.0.0
+
+---
+Task ID: 8b
+Agent: main agent (live-run debugging)
+Task: Fix the two bugs the first real 3h-cadence run exposed
+
+Work Log:
+- Bug 1: max_stages bounded the ladder HEAD, not the PENDING window -> with s1-s5 done and max_stages=3 the run trained nothing yet reported success. Fixed: pending = [s for s in ladder if not done]; to_run = pending[:max_stages]; dry-run plan prints [run ]/[next] queues
+- Bug 2: permissions lacked actions:read -> gh run list 403 aborted the restore step. Fixed: contents:write + actions:read
+- CI fixes: test_loophole_stack ladder length 7->9; pending-window test assertions (an edit/commit race had shipped the stale version); ruff format repo-wide
+- Verified live: run 36663311223 restore step passes, dataset resolved, ladder step TRAINING (s6/s7/s8) for 25+ min (vs instant no-op before); CI green on 1953359
+
+Stage Summary:
+- The 3h loop is now genuinely self-training and self-releasing; both bugs have pinned regression tests
+- Lesson recorded: never batch Edit + git commit in one message (race); verify file state before commit
