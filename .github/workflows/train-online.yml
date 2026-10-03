@@ -48,7 +48,7 @@ jobs:
       OVERRIDES: ${{ inputs.overrides }}
       HF_REPO: ${{ inputs.hf_repo }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Free runner disk (remove preinstalled bloat)
         run: |
@@ -136,7 +136,7 @@ jobs:
           PY
 
       - name: Upload train-artifacts (export.yml compatible)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: train-artifacts
           path: |
