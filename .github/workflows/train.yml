@@ -54,7 +54,7 @@ jobs:
       CONFIG_PATH: ${{ inputs.config }}
       OVERRIDES: ${{ inputs.overrides }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-env
         with:
@@ -99,7 +99,7 @@ jobs:
         run: find ${{ inputs.artifact_dir }} -maxdepth 3 -type f -print 2>/dev/null || true
 
       - name: Upload train-artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: train-artifacts
           path: ${{ inputs.artifact_dir }}

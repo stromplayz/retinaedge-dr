@@ -58,7 +58,7 @@ jobs:
       IMG_SIZE: ${{ inputs.img_size }}
       TRAIN_RUN_ID: ${{ inputs.train_run_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Free runner disk (remove preinstalled bloat)
         run: |
@@ -174,7 +174,7 @@ jobs:
             --out-dir artifacts/export
 
       - name: Upload export-artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: export-artifacts
           path: artifacts/export/
